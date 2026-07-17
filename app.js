@@ -71,7 +71,7 @@ const S = {
   audio: Object.assign({ voice:false, tick:false, rate:100, voiceName:'' }, store.get('audio', {})),
   access: Object.assign({ contrast:false, motion:false, dyslexia:false, bigControls:false, ls:0 }, store.get('access', {})),
   ui: Object.assign({ scale:100, followSystem:false, reduceTransp:false }, store.get('ui', {})),
-  account: Object.assign({ name:'Máximo Duperez', email:'maximoduperez@gmail.com' }, store.get('account', {})),
+  account: Object.assign({ name:'Máximo Duperez', username:'', email:'maximoduperez@gmail.com', bio:'', avatar:'', country:'', birthdate:'' }, store.get('account', {})),
   collections: store.get('collections', null), // null = derivar de los documentos
 };
 
@@ -132,6 +132,15 @@ function saveReader(){ store.set('reader', S.reader); if (DB.user) DB.saveSettin
 const docById = id => DEMO_DOCS.find(d => d.id===id);
 const docText = id => (DB.user ? DEMO_TEXTS_LIVE[id] : DEMO_TEXTS[id]) || DEMO_TEXTS[id] || '';
 const fmtWords = n => n>=1000 ? (n/1000).toFixed(n>=100000?0:1).replace('.',',')+' k' : n;
+// Normaliza para búsquedas: minúsculas + sin acentos/diacríticos.
+const norm = s => (s||'').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+// Duración legible sin perder minutos exactos (4 min no se convierte en 0 h).
+function fmtDur(mins){
+  mins = Math.max(0, Math.round(mins||0));
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins/60), m = mins%60;
+  return m ? `${h} h ${m} min` : `${h} h`;
+}
 
 /* ---------- Temas ---------- */
 function applyTheme(key){
@@ -209,7 +218,7 @@ function shell(route, content){
       <div class="theme-quick">${themeDots}</div>
       <button class="import-btn" onclick="openImport()">${I.upload}<span>Importar</span></button>
       <div class="profile-row" onclick="go('perfil')">
-        <div class="avatar">${(S.account.name||'MD').split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase()}</div>
+        <div class="avatar">${avatarInner(S.account, 12)}</div>
         <div style="min-width:0"><div style="font-size:12.5px;font-weight:550">${escHtml(S.account.name.split(' ')[0])} ${escHtml((S.account.name.split(' ')[1]||'').slice(0,1))}.</div><div style="font-size:10.5px;color:var(--text3)">${DB.user?'Plan Pro · Sincronizado':'Modo local'}</div></div>
         <span class="sync-dot"></span>
       </div>
@@ -357,11 +366,11 @@ function filteredDocs(){
     if (libFilter.startsWith('col:')) docs = docs.filter(d=>d.collection===libFilter.slice(4));
   }
   if (libQuery){
-    const q = libQuery.toLowerCase();
+    const q = norm(libQuery);
     docs = docs.filter(d =>
-      d.title.toLowerCase().includes(q) || d.author.toLowerCase().includes(q) ||
-      (d.tags||[]).some(t=>t.toLowerCase().includes(q)) || (d.collection||'').toLowerCase().includes(q) ||
-      DEMO_NOTES.some(n=>n.doc===d.id && (n.text+' '+n.note).toLowerCase().includes(q)));
+      norm(d.title).includes(q) || norm(d.author).includes(q) ||
+      (d.tags||[]).some(t=>norm(t).includes(q)) || norm(d.collection).includes(q) ||
+      DEMO_NOTES.some(n=>n.doc===d.id && norm(n.text+' '+n.note).includes(q)));
   }
   const cmp = {
     recientes: null, // orden de inserción (los recién importados van primero)
@@ -466,6 +475,7 @@ function docCard(d){
   return `<div class="doc-card">
     <div style="position:relative" onclick="go('documento/${d.id}')">
       ${coverHTML(d)}
+      ${d.demo?'<span class="demo-badge">Demo</span>':''}
       <div class="dc-hover">
         <button title="Leer" onclick="event.stopPropagation();go('lector/${d.id}')">${I.book}</button>
         <button title="Abrir en RSVP" onclick="event.stopPropagation();go('rsvp/${d.id}')">${I.zap}</button>
@@ -706,7 +716,7 @@ views.estadisticas = () => {
   }).join('');
   return `<div class="page"><h1 class="page-title">Estadísticas</h1><p class="page-sub">${hasReal?`${real.length} sesiones registradas en este dispositivo.`:'Aún no hay actividad registrada: se muestran agregados de las sesiones de ejemplo.'}</p>
   <div class="statgrid four">
-    <div class="stat"><b>${(t.mins/60).toFixed(1).replace('.',',')}<em> h</em></b><span>tiempo total${demoTag}</span></div>
+    <div class="stat"><b>${t.mins<60?t.mins:(t.mins/60).toFixed(1).replace('.',',')}<em> ${t.mins<60?'min':'h'}</em></b><span>tiempo total${demoTag}</span></div>
     <div class="stat"><b>${fmtWords(t.words)}</b><span>palabras leídas${demoTag}</span></div>
     <div class="stat"><b>${t.avgWpm}<em> ppm</em></b><span>velocidad media</span> ${t.maxWpm?`<span class="delta">máx. ${t.maxWpm}</span>`:''}</div>
     <div class="stat"><b>${hoursSaved.toString().replace('.',',')}<em> h</em></b><span>ahorradas con RSVP</span></div>
@@ -817,40 +827,69 @@ function commitGoal(id){
 }
 function deleteGoal(id){ S.goalList = getGoals().filter(g=>g.id!==id); saveGoals(); closeModal(); render(); toast('Objetivo eliminado','x'); }
 
-/* ---------- Logros (desbloqueo real y persistente) ---------- */
-const ACH_RULES = {
-  'Primera sesión': () => realSessions().length >= 1,
-  '10.000 palabras': () => totals(realSessions()).words >= 10000,
-  '100.000 palabras': () => totals(realSessions()).words >= 100000,
-  'Primera semana completa': () => streakDays() >= 7,
-  '500 ppm': () => totals(realSessions()).maxWpm >= 500,
-  'Un libro terminado': () => realSessions().some(s => docById(s.doc)?.done),
-  'Diez libros terminados': () => DEMO_DOCS.filter(d=>d.done).length >= 10,
-  'Una hora sin distracciones': () => realSessions().some(s => s.mins >= 60),
-  'Comprensión > 90 %': () => (compAvg()||0) > 90,
-  'Racha de 30 días': () => streakDays() >= 30,
+/* ---------- Logros (desbloqueo real y persistente, data-driven) ---------- */
+const METRICS = {
+  sessions:      () => realSessions().length,
+  words:         () => totals(realSessions()).words,
+  mins:          () => totals(realSessions()).mins,
+  streak:        () => streakDays(),
+  maxWpm:        () => totals(realSessions()).maxWpm,
+  books:         () => DEMO_DOCS.filter(d=>d.done).length,
+  comp:          () => compAvg() || 0,
+  notes:         () => DEMO_NOTES.length,
+  vocab:         () => DEMO_VOCAB.length,
+  longSession:   () => realSessions().reduce((a,s)=>Math.max(a, s.mins||0), 0),
+  distinctDocs:  () => new Set(realSessions().map(s=>s.doc)).size,
+  nightSessions: () => realSessions().filter(s=>{ const h=new Date(s.ts).getHours(); return h>=0 && h<5; }).length,
+  dawnSessions:  () => realSessions().filter(s=>{ const h=new Date(s.ts).getHours(); return h>=5 && h<8; }).length,
+  readingDays:   () => new Set(realSessions().map(s=>dayKey(s.ts))).size,
 };
+const achById = key => ACHIEVEMENTS.find(a => a.key === key);
+function metricValue(name){ try{ return METRICS[name] ? METRICS[name]() : 0; }catch(e){ return 0; } }
 function unlockedAchievements(){ return store.get('achieved', {}); }
 function checkAchievements(){
   const unlocked = unlockedAchievements();
-  let news = false;
-  for (const [name, rule] of Object.entries(ACH_RULES)){
-    if (unlocked[name]) continue;
-    try{ if (rule()){ unlocked[name] = fmtDate(new Date().toISOString()); news = true; toast(`Logro desbloqueado: ${name}`,'trophy'); if (DB.user) DB.unlockAchievement(name).catch(console.error); } }catch(e){}
+  const fresh = [];
+  for (const a of ACHIEVEMENTS){
+    if (unlocked[a.key]) continue;
+    if (metricValue(a.metric) >= a.target){
+      unlocked[a.key] = fmtDate(new Date().toISOString());
+      fresh.push(a);
+      if (DB.user) DB.unlockAchievement(a.key).catch(console.error);
+    }
   }
-  if (news){ try{ store.set('achieved', unlocked); }catch(e){ storageError(e); } }
+  if (fresh.length){
+    try{ store.set('achieved', unlocked); }catch(e){ storageError(e); }
+    fresh.forEach((a,i)=> setTimeout(()=> celebrateAchievement(a), i*1400));
+  }
 }
-function achProgressLabel(name){
-  const t = totals(realSessions());
-  switch(name){
-    case '10.000 palabras': return `${Math.min(t.words,10000)} / 10.000`;
-    case '100.000 palabras': return `${fmtWords(Math.min(t.words,100000))} / 100 k`;
-    case 'Diez libros terminados': return `${DEMO_DOCS.filter(d=>d.done).length} / 10`;
-    case 'Racha de 30 días': return `${streakDays()} / 30`;
-    case 'Primera semana completa': return `${Math.min(streakDays(),7)} / 7 días`;
-    case '500 ppm': return `${t.maxWpm||0} / 500`;
-    default: return 'Pendiente';
-  }
+function achProgressLabel(key){
+  const a = achById(key); if (!a) return 'Pendiente';
+  const cur = metricValue(a.metric);
+  if (a.metric === 'words') return `${fmtWords(Math.min(cur,a.target))} / ${fmtWords(a.target)}`;
+  if (a.metric === 'mins')  return `${Math.min(cur,a.target)} / ${a.target} min`;
+  if (a.metric === 'streak' || a.metric === 'readingDays') return `${Math.min(cur,a.target)} / ${a.target} días`;
+  if (a.metric === 'maxWpm') return `${cur} / ${a.target} ppm`;
+  if (a.metric === 'comp') return `${cur} / ${a.target} %`;
+  return `${Math.min(cur,a.target)} / ${a.target}`;
+}
+// Popup temporal con fuegos artificiales; posicionado arriba para no tapar la lectura.
+function celebrateAchievement(a){
+  const root = document.getElementById('toast-root') || document.body;
+  const el = document.createElement('div');
+  el.className = 'ach-pop';
+  const sparks = Array.from({length:14}, (_,i)=>{
+    const ang = (i/14)*Math.PI*2, dist = 46 + (i%3)*10;
+    const x = Math.cos(ang)*dist, y = Math.sin(ang)*dist;
+    const hue = (i*26)%360;
+    return `<span class="ach-spark" style="--x:${x.toFixed(0)}px;--y:${y.toFixed(0)}px;--c:hsl(${hue} 90% 60%);animation-delay:${(i%4)*40}ms"></span>`;
+  }).join('');
+  el.innerHTML = `<div class="ach-fw">${sparks}</div>
+    <div class="ach-ico">${a.icon||'🏆'}</div>
+    <div class="ach-txt"><div class="ach-lab">¡Logro desbloqueado!</div><div class="ach-name">${a.name}</div></div>`;
+  root.appendChild(el);
+  requestAnimationFrame(()=> el.classList.add('show'));
+  setTimeout(()=>{ el.classList.remove('show'); setTimeout(()=> el.remove(), 400); }, 4200);
 }
 
 views.objetivos = () => {
@@ -866,11 +905,11 @@ views.objetivos = () => {
       <button class="btn sm" style="margin-top:14px" onclick="openGoalEditor(null)">${I.plus} Nuevo objetivo</button>
       ${realSessions().length===0?'<p style="font-size:11.5px;color:var(--text3);margin-top:12px">El progreso se calcula con tus sesiones reales. Aún no hay actividad registrada en este dispositivo.</p>':''}
     </section>
-    <section class="card panel"><h3>Logros</h3>
+    <section class="card panel"><h3>Logros <span class="mono" style="font-size:11px;color:var(--text3);font-weight:400">${ACHIEVEMENTS.filter(a=>unlocked[a.key]).length} / ${ACHIEVEMENTS.length}</span></h3>
       <div style="display:flex;flex-direction:column;gap:9px">
-      ${ACHIEVEMENTS.map(a=>{ const date = unlocked[a.name]; return `<div class="ach ${date?'':'locked'}"><div class="ach-medal">${date?I.check:I.trophy}</div>
+      ${ACHIEVEMENTS.map(a=>{ const date = unlocked[a.key]; return `<div class="ach ${date?'':'locked'}"><div class="ach-medal" style="font-size:17px">${a.icon||I.trophy}</div>
         <div style="flex:1"><b style="font-size:13px">${a.name}</b><div style="font-size:11.5px;color:var(--text3)">${a.desc}</div></div>
-        <span class="mono" style="font-size:10.5px;color:var(--text3)">${date || achProgressLabel(a.name)}</span></div>`;}).join('')}
+        <span class="mono" style="font-size:10.5px;color:var(--text3)">${date || achProgressLabel(a.key)}</span></div>`;}).join('')}
       </div>
     </section>
   </div></div>`;
@@ -881,7 +920,7 @@ function vocabDue(){ return DEMO_VOCAB.filter(v => (v.level||1) <= 2); } // nive
 views.vocabulario = () => {
   const due = vocabDue();
   let list = DEMO_VOCAB;
-  if (vocabQuery){ const q = vocabQuery.toLowerCase(); list = list.filter(v => (v.word+' '+(v.def||'')+' '+(v.tr||'')+' '+(v.doc||'')).toLowerCase().includes(q)); }
+  if (vocabQuery){ const q = norm(vocabQuery); list = list.filter(v => norm(v.word+' '+(v.def||'')+' '+(v.tr||'')+' '+(v.doc||'')).includes(q)); }
   return `<div class="page"><h1 class="page-title">Vocabulario</h1><p class="page-sub">${DEMO_VOCAB.length} palabra${DEMO_VOCAB.length!==1?'s':''} guardada${DEMO_VOCAB.length!==1?'s':''} · ${due.length} pendiente${due.length!==1?'s':''} de repaso.</p>
   <div class="lib-toolbar">
     <button class="btn primary sm" ${due.length?'':'disabled'} onclick="startVocabReview()">${I.layers} Repasar (${due.length})</button>
@@ -987,8 +1026,13 @@ views.perfil = () => {
   return `<div class="page" style="max-width:720px">
   <h1 class="page-title">Perfil</h1><p class="page-sub">Cuenta, almacenamiento y datos.</p>
   <div class="card panel" style="display:flex;gap:18px;align-items:center;margin-bottom:18px">
-    <div class="avatar" style="width:56px;height:56px;font-size:19px">${(DB.user?.email||S.account.name).slice(0,2).toUpperCase()}</div>
-    <div style="flex:1"><b style="font-size:16px">${DB.user ? escHtml(DB.user.email.split('@')[0]) : escHtml(S.account.name)}</b><div style="font-size:13px;color:var(--text3)">${escHtml(DB.user?.email || S.account.email)}${DB.user?'':' · modo local, sin cuenta'}</div></div>
+    <div class="avatar avatar-lg">${avatarInner(S.account, 19)}</div>
+    <div style="flex:1">
+      <b style="font-size:16px">${escHtml(S.account.name || (DB.user?.email||'').split('@')[0])}</b>
+      ${S.account.username?`<div style="font-size:12.5px;color:var(--text2)">@${escHtml(S.account.username)}</div>`:''}
+      <div style="font-size:13px;color:var(--text3)">${escHtml(DB.user?.email || S.account.email)}${DB.user?'':' · modo local, sin cuenta'}</div>
+      ${S.account.bio?`<div style="font-size:12.5px;color:var(--text2);margin-top:6px">${escHtml(S.account.bio)}</div>`:''}
+    </div>
     ${DB.user ? `<button class="btn sm" onclick="DB.signOut().then(()=>location.reload())">Cerrar sesión</button>` : `<button class="btn sm" onclick="go('ajustes');S.setTab='cuenta'">Editar</button>`}
   </div>
   <div class="card panel" style="margin-bottom:18px"><h3>Sincronización</h3>
@@ -1060,8 +1104,22 @@ views.ajustes = () => {
   else if (tab==='atajos') body = `<div class="kbd-grid">
     ${[['Reproducir / pausar','Espacio'],['Retroceder / avanzar palabra','← →'],['Avanzar por frase','⇧ ← →'],['Reiniciar frase','R'],['Pantalla completa','F'],['Cambiar tema','T'],['Crear marcador','M'],['Crear nota','N'],['Salir del modo inmersivo','Esc'],['Subir / bajar velocidad','+ −'],['Buscador global','⌘ K'],['Alternar lector ↔ RSVP','⇥ Tab']].map(k=>`<div class="kbd-row"><span>${k[0]}</span><kbd>${k[1]}</kbd></div>`).join('')}</div>`;
   else if (tab==='cuenta') body = `
-    <div class="field"><label>Nombre</label><input class="input" id="acc-name" value="${escHtml(S.account.name)}"></div>
-    <div class="field"><label>Correo</label><input class="input" id="acc-email" type="email" value="${escHtml(S.account.email)}"></div>
+    <div style="display:flex;gap:16px;align-items:center;margin-bottom:18px">
+      <div class="avatar avatar-lg" id="acc-avatar-prev">${avatarInner(S.account, 34)}</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <button class="btn sm" onclick="document.getElementById('acc-avatar-file').click()">Cambiar foto</button>
+        ${S.account.avatar?`<button class="btn sm" onclick="S.account.avatar='';store.set('account',S.account);render()" style="color:#c04545">Quitar foto</button>`:''}
+        <input type="file" id="acc-avatar-file" accept="image/*" hidden onchange="pickAvatar(this)">
+      </div>
+    </div>
+    <div class="field"><label>Nombre de usuario</label><input class="input" id="acc-username" placeholder="tu_usuario" value="${escHtml(S.account.username||'')}"></div>
+    <div class="field"><label>Nombre visible</label><input class="input" id="acc-name" value="${escHtml(S.account.name)}"></div>
+    <div class="field"><label>Correo</label><input class="input" id="acc-email" type="email" value="${escHtml(S.account.email)}" ${DB.user?'disabled title="El correo se gestiona desde tu cuenta"':''}></div>
+    <div class="field"><label>Biografía</label><textarea class="input" id="acc-bio" rows="3" placeholder="Cuéntanos algo sobre ti…" style="resize:vertical">${escHtml(S.account.bio||'')}</textarea></div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <div class="field" style="flex:1;min-width:160px"><label>País / idioma</label><input class="input" id="acc-country" placeholder="España" value="${escHtml(S.account.country||'')}"></div>
+      <div class="field" style="flex:1;min-width:160px"><label>Fecha de nacimiento</label><input class="input" id="acc-birth" type="date" value="${escHtml(S.account.birthdate||'')}"></div>
+    </div>
     <button class="btn primary sm" onclick="saveAccount()">Guardar cambios</button>
     <div class="hr"></div>
     <div class="setrow"><div><div class="sr-t">Plan</div><div class="sr-d">${DB.user?'Cuenta sincronizada con Supabase':'Modo local: los datos viven en este navegador. Configura Supabase para sincronizar entre dispositivos.'}</div></div></div>`;
@@ -1087,12 +1145,46 @@ views.ajustes = () => {
   </div></div>`;
 };
 function segSel(btn){ [...btn.parentElement.children].forEach(b=>b.classList.remove('on')); btn.classList.add('on'); }
+function avatarInner(acc, fontSize){
+  if (acc && acc.avatar) return `<img src="${acc.avatar}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">`;
+  const src = (acc && (acc.name || acc.username)) || 'MD';
+  return `<span style="font-size:${fontSize||14}px">${src.split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase()}</span>`;
+}
+function pickAvatar(input){
+  const f = input.files && input.files[0]; if (!f) return;
+  if (f.size > 3*1024*1024){ toast('La imagen no debe superar 3 MB','x'); return; }
+  const r = new FileReader();
+  r.onload = () => {
+    // Reescala a 256px para no llenar el almacenamiento con imágenes grandes.
+    const img = new Image();
+    img.onload = () => {
+      const s = 256, cv = document.createElement('canvas'); cv.width = cv.height = s;
+      const ctx = cv.getContext('2d');
+      const scale = Math.max(s/img.width, s/img.height), w = img.width*scale, h = img.height*scale;
+      ctx.drawImage(img, (s-w)/2, (s-h)/2, w, h);
+      S.account.avatar = cv.toDataURL('image/jpeg', 0.85);
+      store.set('account', S.account);
+      const prev = document.getElementById('acc-avatar-prev'); if (prev) prev.innerHTML = avatarInner(S.account, 34);
+      render(); S.setTab='cuenta';
+      toast('Foto actualizada','check');
+    };
+    img.src = r.result;
+  };
+  r.readAsDataURL(f);
+}
 function saveAccount(){
   const name = document.getElementById('acc-name').value.trim();
+  const username = document.getElementById('acc-username').value.trim().replace(/\s+/g,'_');
   const email = document.getElementById('acc-email').value.trim();
+  const bio = document.getElementById('acc-bio').value.trim();
+  const country = (document.getElementById('acc-country')||{}).value?.trim() || '';
+  const birthdate = (document.getElementById('acc-birth')||{}).value || '';
   if (!name){ toast('El nombre no puede estar vacío','x'); return; }
+  if (username && !/^[a-z0-9_.]{3,20}$/i.test(username)){ toast('Usuario: 3-20 letras, números, . o _','x'); return; }
   if (!email.includes('@')){ toast('Escribe un correo válido','x'); return; }
-  S.account = { name, email }; store.set('account', S.account);
+  S.account = Object.assign({}, S.account, { name, username, email, bio, country, birthdate });
+  store.set('account', S.account);
+  if (DB.user) DB.saveProfile && DB.saveProfile(S.account).catch(console.error);
   render(); toast('Cuenta actualizada','check');
 }
 function exportSessionsCsv(){
@@ -1274,9 +1366,19 @@ views.documento = (id) => {
       <section class="card panel"><h3>Tabla de contenidos</h3>
         ${secs.map((c,i)=>{ const pct = c.start/paras.length; return `<button class="toc-item ${d.progress>=pct && d.progress< (secs[i+1]?secs[i+1].start/paras.length:1) ?'on':''}" onclick="store.set('readpos.${d.id}',${pct.toFixed(3)});go('lector/${d.id}')"><span>${c.label}</span><span>${d.progress>=(secs[i+1]?secs[i+1].start/paras.length:1)?'✓':Math.max(1,Math.round((paras.slice(c.start, secs[i+1]?.start).join(' ').split(/\s+/).length)/S.rsvp.wpm))+' min'}</span></button>`;}).join('')}
         ${bms.length?`<h3 style="margin-top:22px">Marcadores</h3>${bms.map(b=>`
-          <div class="toc-item" style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="${b.token!==null?`openBookmark('${b.id}')`:`store.set('readpos.${d.id}',${(b.scroll||0).toFixed(3)});go('lector/${d.id}')`}">
-            <span style="display:flex;gap:8px;align-items:center">${I.bookmark}<span style="font-size:12px">${escHtml(b.excerpt||'')}</span></span>
-            <span style="display:flex;gap:8px;align-items:center"><span class="mono" style="font-size:10.5px">${b.progress} %</span><a style="cursor:pointer;color:#c04545;font-size:11px" onclick="event.stopPropagation();deleteBookmark('${b.id}')">✕</a></span>
+          <div class="toc-item bm-item" style="align-items:flex-start;cursor:pointer" onclick="${b.token!==null?`openBookmark('${b.id}')`:`store.set('readpos.${d.id}',${(b.scroll||0).toFixed(3)});go('lector/${d.id}')`}">
+            <span style="display:flex;gap:8px;align-items:flex-start;min-width:0;flex:1">${I.bookmark}
+              <span style="min-width:0">
+                <span style="font-size:12px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(b.excerpt||'')}</span>
+                <span style="font-size:10.5px;color:var(--text3);display:flex;gap:8px;flex-wrap:wrap;margin-top:2px">
+                  ${b.chapter?`<span>${escHtml(b.chapter)}</span>·`:''}
+                  <span>${b.token!==null?'RSVP':'Lector'}</span>·
+                  <span>${b.date?fmtDate(b.date):''}</span>
+                  ${b.wpm?`· <span class="mono">${b.wpm} ppm</span>`:''}
+                </span>
+              </span>
+            </span>
+            <span style="display:flex;gap:8px;align-items:center;flex-shrink:0"><span class="mono" style="font-size:10.5px">${b.progress} %</span><a style="cursor:pointer;color:#c04545;font-size:11px" onclick="event.stopPropagation();deleteBookmark('${b.id}')">✕</a></span>
           </div>`).join('')}`:''}
       </section>
       <section class="card panel"><h3>Notas en este documento <a onclick="go('notas');return false" href="#/notas">Ver todas</a></h3>
@@ -1460,9 +1562,9 @@ function runDocSearch(q){
   const res = document.getElementById('docsearch-res'); if (!res) return;
   if (!q || q.length < 2){ res.innerHTML = ''; return; }
   const paras = docParas(window._searchDoc);
-  const ql = q.toLowerCase();
+  const ql = norm(q);
   const hits = [];
-  paras.forEach((p,i)=>{ const ix = p.toLowerCase().indexOf(ql); if (ix>=0 && hits.length<30) hits.push({ i, ctx: p.slice(Math.max(0,ix-60), ix+q.length+60) }); });
+  paras.forEach((p,i)=>{ const ix = norm(p).indexOf(ql); if (ix>=0 && hits.length<30) hits.push({ i, ctx: p.slice(Math.max(0,ix-60), ix+q.length+60) }); });
   res.innerHTML = hits.length ? hits.map(h=>`<button class="toc-item" style="text-align:left" onclick="jumpToPara(${h.i},'${escHtml(q).replace(/'/g,"\\'")}')">…${escHtml(h.ctx)}…</button>`).join('')
     : `<p style="font-size:12.5px;color:var(--text3)">Sin coincidencias para «${escHtml(q)}».</p>`;
 }
@@ -2125,7 +2227,7 @@ function openCmdk(){
   renderCmdk(''); document.getElementById('cmdk-in').focus();
 }
 function renderCmdk(q){
-  const items = cmdkItems().filter(it => (it[1]+' '+it[2]).toLowerCase().includes(q.toLowerCase())).slice(0, 14);
+  const items = cmdkItems().filter(it => norm(it[1]+' '+it[2]).includes(norm(q))).slice(0, 14);
   cmdkSel = Math.min(cmdkSel, Math.max(0,items.length-1));
   window._cmdkItems = items;
   document.getElementById('cmdk-list').innerHTML =
@@ -2363,7 +2465,26 @@ async function loadUserData(){
   ]);
   DEMO_DOCS = docs; DEMO_NOTES = notes; DEMO_VOCAB = vocab; DEMO_SESSIONS = sessions; S.goals = goals;
   if (settings){ S.theme = settings.theme || S.theme; S.custom = settings.custom || S.custom; Object.assign(S.rsvp, settings.rsvp||{}); Object.assign(S.reader, settings.reader||{}); }
+  // Perfil del usuario (nombre, username, foto, bio…)
+  try{
+    const prof = await DB.loadProfile();
+    S.account = Object.assign({}, S.account, {
+      email: DB.user.email || S.account.email,
+      name: (prof && prof.display_name) || S.account.name,
+      username: (prof && prof.username) || S.account.username,
+      bio: (prof && prof.bio) || S.account.bio,
+      avatar: (prof && prof.avatar_url) || S.account.avatar,
+      country: (prof && prof.country) || S.account.country,
+    });
+    store.set('account', S.account);
+  }catch(e){ console.error(e); }
   window._unlockedAchievements = achieved;
+  // Fusiona los logros desbloqueados en el servidor con el estado local por-key.
+  try{
+    const local = store.get('achieved', {});
+    (achieved instanceof Set ? [...achieved] : Object.keys(achieved||{})).forEach(k => { if (!local[k]) local[k] = fmtDate(new Date().toISOString()); });
+    store.set('achieved', local);
+  }catch(e){}
 }
 function mergeLocalImports(){
   const local = store.get('localImports', []);

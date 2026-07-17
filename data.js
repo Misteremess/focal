@@ -11,31 +11,18 @@ const DEMO_TEXTS = {
 
 // Nota: estos DEMO_* son el modo sin conexión (CONFIG.SUPABASE_URL vacío).
 // Con Supabase configurado, app.js los sustituye por datos reales por cuenta tras el login.
+// Modo demo local (sin Supabase): un único libro de muestra, claramente marcado como Demo.
 let DEMO_DOCS = [
-  { id:'habitos', title:'Hábitos atómicos', author:'James Clear', type:'EPUB', pages:328, words:71200, progress:0.62, lastRead:'Hace 2 horas', chapter:'Cap. 11 — Camina despacio, pero nunca hacia atrás', timeLeft:'2 h 10 min', avgWpm:412, tags:['No ficción','Productividad'], fav:true, cover:{bg:'#1d3a2f', fg:'#e8e3d8', accent:'#d97742', ratio:1.5, label:'HA'}, collection:'Crecimiento', added:'12 mar 2026', readTime:'6 h 40 min', sessions:23 },
-  { id:'viento', title:'El nombre del viento', author:'Patrick Rothfuss', type:'EPUB', pages:872, words:259000, progress:0.34, lastRead:'Ayer', chapter:'Cap. 16 — Esperanza', timeLeft:'9 h 05 min', avgWpm:388, tags:['Fantasía','Novela'], fav:true, cover:{bg:'#8c2f28', fg:'#f2e6cf', accent:'#e8b04b', ratio:1.55, label:'NV'}, collection:'Ficción', added:'28 feb 2026', readTime:'5 h 12 min', sessions:14 },
-  { id:'meditaciones', title:'Meditaciones', author:'Marco Aurelio', type:'EPUB', pages:254, words:52000, progress:0.81, lastRead:'Hace 3 días', chapter:'Libro VII', timeLeft:'48 min', avgWpm:356, tags:['Filosofía','Clásico'], fav:false, cover:{bg:'#e9e2d4', fg:'#2b2620', accent:'#a33b2e', ratio:1.45, label:'M'}, collection:'Crecimiento', added:'4 ene 2026', readTime:'3 h 55 min', sessions:19 },
-  { id:'paper_ia', title:'Razonamiento en modelos de lenguaje a gran escala', author:'Chen, Okafor y Lindqvist', type:'PDF', pages:34, words:14800, progress:0.12, lastRead:'Hace 5 días', chapter:'2. Metodología', timeLeft:'31 min', avgWpm:298, tags:['Académico','IA'], fav:false, cover:{bg:'#f4f2ee', fg:'#1a1a1a', accent:'#2b5bd7', ratio:1.29, label:'arXiv'}, collection:'Investigación', added:'2 jul 2026', readTime:'22 min', sessions:3 },
-  { id:'apuntes', title:'Apuntes — Estructuras de datos', author:'Máximo Duperez', type:'MD', pages:48, words:9600, progress:0.55, lastRead:'Hace 1 semana', chapter:'Árboles equilibrados', timeLeft:'12 min', avgWpm:445, tags:['Apuntes','Programación'], fav:false, cover:{bg:'#101418', fg:'#7ee2a8', accent:'#7ee2a8', ratio:1.35, label:'{ }'}, collection:'Universidad', added:'19 jun 2026', readTime:'55 min', sessions:7 },
-  { id:'scifi', title:'Meridiano', author:'Elia Cardoso', type:'EPUB', pages:412, words:118000, progress:0.05, lastRead:'Hace 2 semanas', chapter:'Cap. 1 — Once minutos', timeLeft:'4 h 42 min', avgWpm:402, tags:['Ciencia ficción','Novela'], fav:false, cover:{bg:'#131a2e', fg:'#cfd8f5', accent:'#4b7bec', ratio:1.5, label:'M·'}, collection:'Ficción', added:'30 may 2026', readTime:'18 min', sessions:2 },
-  { id:'informe', title:'Informe Q3 2025 — Resultados', author:'Dirección Financiera', type:'PDF', pages:26, words:8400, progress:1, lastRead:'Hace 1 mes', chapter:'Completado', timeLeft:'—', avgWpm:365, tags:['Trabajo','Informe'], fav:false, cover:{bg:'#f7f5f1', fg:'#33302b', accent:'#b8622f', ratio:1.29, label:'Q3'}, collection:'Trabajo', added:'8 abr 2026', readTime:'26 min', sessions:2, done:true },
+  { id:'habitos', demo:true, title:'Hábitos atómicos', author:'James Clear', type:'EPUB', pages:328, words:71200, progress:0.62, lastRead:'Hace 2 horas', chapter:'Cap. 11 — Camina despacio, pero nunca hacia atrás', timeLeft:'2 h 10 min', avgWpm:412, tags:['No ficción','Productividad'], fav:true, cover:{bg:'#1d3a2f', fg:'#e8e3d8', accent:'#d97742', ratio:1.5, label:'HA'}, collection:'Crecimiento', added:'12 mar 2026', readTime:'6 h 40 min', sessions:23 },
 ];
 
 let DEMO_NOTES = [
   { id:1, doc:'habitos', color:'amber', text:'No te elevas al nivel de tus metas. Caes al nivel de tus sistemas.', note:'Aplicar a la rutina de lectura: diseñar el sistema, no la meta.', chapter:'Cap. 1', date:'14 jul 2026' },
   { id:2, doc:'habitos', color:'green', text:'Los hábitos son el interés compuesto de la superación personal.', note:'', chapter:'Cap. 1', date:'14 jul 2026' },
-  { id:3, doc:'meditaciones', color:'blue', text:'Hemos nacido para colaborar, al igual que los pies, las manos, los párpados.', note:'Idea central del libro II. Relacionar con la nota sobre cooperación.', chapter:'Libro II', date:'11 jul 2026' },
-  { id:4, doc:'viento', color:'rose', text:'Era un silencio de tres partes.', note:'Estructura tripartita que se repite en toda la novela.', chapter:'Prólogo', date:'9 jul 2026' },
-  { id:5, doc:'paper_ia', color:'amber', text:'La memorización y la generalización no son procesos mutuamente excluyentes, sino extremos de un continuo.', note:'Citar en el trabajo de fin de máster.', chapter:'Introducción', date:'12 jul 2026' },
-  { id:6, doc:'apuntes', color:'green', text:'El factor de carga determina cuándo redimensionar la tabla; un valor típico es 0,75.', note:'Pregunta típica de examen.', chapter:'Tablas hash', date:'6 jul 2026' },
 ];
 
 let DEMO_VOCAB = [
-  { id:'v1', word:'contrapunto', def:'Concurrencia de dos o más voces o líneas melódicas independientes; contraste entre dos elementos simultáneos.', doc:'El nombre del viento', docId:'viento', date:'9 jul 2026', level:3 },
-  { id:'v2', word:'contrafactual', def:'Relativo a lo que no ha sucedido pero podría haber sucedido; condición hipotética contraria a los hechos.', doc:'Razonamiento en modelos…', docId:'paper_ia', date:'12 jul 2026', level:2 },
-  { id:'v3', word:'amortizado', def:'En análisis de algoritmos, coste medio por operación considerando una secuencia completa de operaciones.', doc:'Apuntes — Estructuras de datos', docId:'apuntes', date:'6 jul 2026', level:4 },
-  { id:'v4', word:'directriz', def:'Que dirige o encamina. En Marco Aurelio, la parte rectora del alma (hegemonikón).', doc:'Meditaciones', docId:'meditaciones', date:'11 jul 2026', level:1 },
-  { id:'v5', word:'elasticidad', def:'Sensibilidad de la demanda ante variaciones del precio.', doc:'Informe Q3 2025', docId:'informe', date:'20 jun 2026', level:5 },
+  { id:'v1', word:'compuesto', def:'Que está formado por la unión de varios elementos; en el texto, el «interés compuesto» de los hábitos.', doc:'Hábitos atómicos', docId:'habitos', date:'14 jul 2026', level:2 },
 ];
 
 // Preguntas de comprensión preconfiguradas para los textos de demostración.
@@ -72,15 +59,9 @@ const QUIZ = {
   ],
 };
 
-let DEMO_SESSIONS = [
-  { doc:'habitos', date:'Hoy, 09:12', mode:'RSVP', mins:24, words:9840, wpm:410, comp:92 },
-  { doc:'viento', date:'Ayer, 22:40', mode:'RSVP', mins:38, words:14700, wpm:387, comp:88 },
-  { doc:'habitos', date:'Ayer, 08:55', mode:'Tradicional', mins:18, words:4900, wpm:272, comp:95 },
-  { doc:'paper_ia', date:'12 jul, 16:20', mode:'RSVP', mins:14, words:4170, wpm:298, comp:84 },
-  { doc:'meditaciones', date:'11 jul, 23:05', mode:'RSVP', mins:21, words:7480, wpm:356, comp:90 },
-  { doc:'apuntes', date:'6 jul, 17:40', mode:'Modo estudio', mins:45, words:8900, wpm:445, comp:96 },
-  { doc:'scifi', date:'3 jul, 21:15', mode:'RSVP', mins:18, words:7230, wpm:402, comp:87 },
-];
+// Sin sesiones ficticias: las estadísticas se calculan solo con la actividad real
+// del usuario (entradas con marca de tiempo `ts`). Ver realSessions() en app.js.
+let DEMO_SESSIONS = [];
 
 const THEMES = {
   paper:     { name:'Paper', vars:{ bg:'#f6f2ea', surface:'#fcfaf5', surface2:'#efe9dd', border:'#e2dbcc', text:'#2b2824', text2:'#6b655a', text3:'#9a9284', accent:'#b3382c', orp:'#b3382c', shadow:'rgba(60,50,30,.08)' }, desc:'Libro impreso moderno' },
@@ -98,15 +79,74 @@ const THEMES = {
 THEMES.ocean.vars.text3 = '#5f7888';
 
 // El estado de desbloqueo se calcula en app.js con la actividad real y se persiste.
+// Modelo data-driven: cada logro define una métrica (ver METRICS en app.js), un objetivo
+// y un icono. El progreso y el desbloqueo se evalúan de forma genérica.
 const ACHIEVEMENTS = [
-  { name:'Primera sesión', desc:'Completa tu primera sesión RSVP' },
-  { name:'10.000 palabras', desc:'Lee 10.000 palabras acumuladas' },
-  { name:'100.000 palabras', desc:'Lee 100.000 palabras acumuladas' },
-  { name:'Primera semana completa', desc:'Lee 7 días consecutivos' },
-  { name:'500 ppm', desc:'Alcanza 500 palabras por minuto' },
-  { name:'Un libro terminado', desc:'Termina tu primer documento largo' },
-  { name:'Diez libros terminados', desc:'Termina diez documentos' },
-  { name:'Una hora sin distracciones', desc:'Una sesión de 60 minutos' },
-  { name:'Comprensión > 90 %', desc:'Media superior al 90 % en las pruebas' },
-  { name:'Racha de 30 días', desc:'Lee 30 días consecutivos' },
+  // — Sesiones —
+  { key:'sess_1',   name:'Primera sesión',        desc:'Completa tu primera sesión de lectura',        metric:'sessions', target:1,   icon:'🎉' },
+  { key:'sess_5',   name:'Cinco sesiones',         desc:'Completa 5 sesiones de lectura',               metric:'sessions', target:5,   icon:'📖' },
+  { key:'sess_10',  name:'Constancia inicial',     desc:'Completa 10 sesiones',                          metric:'sessions', target:10,  icon:'📚' },
+  { key:'sess_25',  name:'Lector habitual',        desc:'Completa 25 sesiones',                          metric:'sessions', target:25,  icon:'📕' },
+  { key:'sess_50',  name:'Medio centenar',         desc:'Completa 50 sesiones',                          metric:'sessions', target:50,  icon:'📗' },
+  { key:'sess_100', name:'Centurión lector',       desc:'Completa 100 sesiones',                         metric:'sessions', target:100, icon:'💯' },
+  { key:'sess_250', name:'Devorador de sesiones',  desc:'Completa 250 sesiones',                         metric:'sessions', target:250, icon:'🏅' },
+  // — Palabras —
+  { key:'w_1k',     name:'Mil palabras',           desc:'Lee 1.000 palabras acumuladas',                metric:'words', target:1000,    icon:'✍️' },
+  { key:'w_10k',    name:'10.000 palabras',        desc:'Lee 10.000 palabras acumuladas',               metric:'words', target:10000,   icon:'📝' },
+  { key:'w_50k',    name:'50.000 palabras',        desc:'Lee 50.000 palabras acumuladas',               metric:'words', target:50000,   icon:'🗒️' },
+  { key:'w_100k',   name:'100.000 palabras',       desc:'Lee 100.000 palabras acumuladas',              metric:'words', target:100000,  icon:'📜' },
+  { key:'w_250k',   name:'Cuarto de millón',       desc:'Lee 250.000 palabras acumuladas',              metric:'words', target:250000,  icon:'📈' },
+  { key:'w_500k',   name:'Medio millón',           desc:'Lee 500.000 palabras acumuladas',              metric:'words', target:500000,  icon:'🌟' },
+  { key:'w_1m',     name:'Millón de palabras',     desc:'Lee 1.000.000 de palabras acumuladas',         metric:'words', target:1000000, icon:'👑' },
+  // — Tiempo —
+  { key:'t_30',     name:'Media hora',             desc:'Acumula 30 minutos de lectura',                metric:'mins', target:30,    icon:'⏱️' },
+  { key:'t_60',     name:'Una hora',               desc:'Acumula 60 minutos de lectura',                metric:'mins', target:60,    icon:'⏲️' },
+  { key:'t_300',    name:'Cinco horas',            desc:'Acumula 5 horas de lectura',                   metric:'mins', target:300,   icon:'🕐' },
+  { key:'t_600',    name:'Diez horas',             desc:'Acumula 10 horas de lectura',                  metric:'mins', target:600,   icon:'🕙' },
+  { key:'t_1500',   name:'Veinticinco horas',      desc:'Acumula 25 horas de lectura',                  metric:'mins', target:1500,  icon:'⌛' },
+  { key:'t_3000',   name:'Cincuenta horas',        desc:'Acumula 50 horas de lectura',                  metric:'mins', target:3000,  icon:'🏆' },
+  { key:'long_30',  name:'Concentración',          desc:'Una sesión de 30 minutos seguidos',            metric:'longSession', target:30, icon:'🎯' },
+  { key:'long_60',  name:'Sin distracciones',      desc:'Una sesión de 60 minutos seguidos',            metric:'longSession', target:60, icon:'🧘' },
+  { key:'long_120', name:'Maratón de lectura',     desc:'Una sesión de 120 minutos seguidos',           metric:'longSession', target:120, icon:'🏃' },
+  // — Racha —
+  { key:'str_3',    name:'Tres días seguidos',     desc:'Lee 3 días consecutivos',                      metric:'streak', target:3,   icon:'🔥' },
+  { key:'str_7',    name:'Primera semana',         desc:'Lee 7 días consecutivos',                      metric:'streak', target:7,   icon:'📅' },
+  { key:'str_14',   name:'Dos semanas',            desc:'Lee 14 días consecutivos',                     metric:'streak', target:14,  icon:'🗓️' },
+  { key:'str_30',   name:'Racha de 30 días',       desc:'Lee 30 días consecutivos',                     metric:'streak', target:30,  icon:'🌙' },
+  { key:'str_60',   name:'Dos meses imparable',    desc:'Lee 60 días consecutivos',                     metric:'streak', target:60,  icon:'⚡' },
+  { key:'str_100',  name:'Cien días de fuego',     desc:'Lee 100 días consecutivos',                    metric:'streak', target:100, icon:'💥' },
+  { key:'str_365',  name:'Un año leyendo',         desc:'Lee 365 días consecutivos',                    metric:'streak', target:365, icon:'🎖️' },
+  // — Velocidad —
+  { key:'wpm_250',  name:'250 ppm',                desc:'Alcanza 250 palabras por minuto',              metric:'maxWpm', target:250, icon:'🚶' },
+  { key:'wpm_350',  name:'350 ppm',                desc:'Alcanza 350 palabras por minuto',              metric:'maxWpm', target:350, icon:'🏇' },
+  { key:'wpm_500',  name:'500 ppm',                desc:'Alcanza 500 palabras por minuto',              metric:'maxWpm', target:500, icon:'🚀' },
+  { key:'wpm_700',  name:'700 ppm',                desc:'Alcanza 700 palabras por minuto',              metric:'maxWpm', target:700, icon:'💨' },
+  { key:'wpm_900',  name:'900 ppm',                desc:'Alcanza 900 palabras por minuto',              metric:'maxWpm', target:900, icon:'⚡' },
+  { key:'wpm_1000', name:'Velocidad supersónica',  desc:'Alcanza 1.000 palabras por minuto',            metric:'maxWpm', target:1000, icon:'🛸' },
+  // — Libros —
+  { key:'book_1',   name:'Un libro terminado',     desc:'Termina tu primer documento',                  metric:'books', target:1,  icon:'✅' },
+  { key:'book_3',   name:'Tres libros',            desc:'Termina 3 documentos',                          metric:'books', target:3,  icon:'📘' },
+  { key:'book_5',   name:'Cinco libros',           desc:'Termina 5 documentos',                          metric:'books', target:5,  icon:'📙' },
+  { key:'book_10',  name:'Diez libros terminados', desc:'Termina 10 documentos',                         metric:'books', target:10, icon:'🎓' },
+  { key:'book_25',  name:'Biblioteca conquistada', desc:'Termina 25 documentos',                         metric:'books', target:25, icon:'🏛️' },
+  { key:'book_50',  name:'Bibliófilo',             desc:'Termina 50 documentos',                         metric:'books', target:50, icon:'👓' },
+  // — Comprensión —
+  { key:'comp_80',  name:'Buena comprensión',      desc:'Media superior al 80 % en las pruebas',        metric:'comp', target:80, icon:'🧠' },
+  { key:'comp_90',  name:'Comprensión > 90 %',     desc:'Media superior al 90 % en las pruebas',        metric:'comp', target:90, icon:'🎓' },
+  { key:'comp_95',  name:'Casi perfecto',          desc:'Media superior al 95 % en las pruebas',        metric:'comp', target:95, icon:'💎' },
+  // — Notas y vocabulario —
+  { key:'note_1',   name:'Primera nota',           desc:'Crea tu primera nota o destacado',             metric:'notes', target:1,  icon:'📌' },
+  { key:'note_10',  name:'Anotador',               desc:'Crea 10 notas o destacados',                    metric:'notes', target:10, icon:'🖍️' },
+  { key:'note_50',  name:'Escriba diligente',      desc:'Crea 50 notas o destacados',                    metric:'notes', target:50, icon:'🗂️' },
+  { key:'voc_1',    name:'Nueva palabra',          desc:'Guarda tu primera palabra de vocabulario',     metric:'vocab', target:1,  icon:'🔤' },
+  { key:'voc_10',   name:'Coleccionista de palabras', desc:'Guarda 10 palabras de vocabulario',         metric:'vocab', target:10, icon:'📖' },
+  { key:'voc_50',   name:'Lexicógrafo',            desc:'Guarda 50 palabras de vocabulario',             metric:'vocab', target:50, icon:'📚' },
+  // — Variedad y hábitos —
+  { key:'div_3',    name:'Explorador',             desc:'Lee en 3 documentos distintos',                metric:'distinctDocs', target:3, icon:'🧭' },
+  { key:'div_5',    name:'Ecléctico',              desc:'Lee en 5 documentos distintos',                metric:'distinctDocs', target:5, icon:'🎨' },
+  { key:'div_10',   name:'Mente inquieta',         desc:'Lee en 10 documentos distintos',               metric:'distinctDocs', target:10, icon:'🌍' },
+  { key:'night_1',  name:'Búho nocturno',          desc:'Lee una sesión entre medianoche y las 5 h',    metric:'nightSessions', target:1, icon:'🦉' },
+  { key:'dawn_1',   name:'Madrugador',             desc:'Lee una sesión entre las 5 h y las 8 h',       metric:'dawnSessions', target:1,  icon:'🌅' },
+  { key:'days_10',  name:'Diez días de lectura',   desc:'Lee en 10 días distintos',                     metric:'readingDays', target:10, icon:'📆' },
+  { key:'days_30',  name:'Mes lector',             desc:'Lee en 30 días distintos',                     metric:'readingDays', target:30, icon:'🗒️' },
 ];

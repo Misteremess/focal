@@ -41,11 +41,29 @@ svg{width:1.1em;height:1.1em;stroke:currentColor;fill:none;stroke-width:1.6;stro
 .nav-item.active svg{stroke:var(--accent)}
 .nav-badge{margin-left:auto;font-size:10.5px;font-family:var(--mono);color:var(--text3)}
 .sidebar-foot{border-top:1px solid var(--border);padding:10px;display:flex;flex-direction:column;gap:6px}
-.import-btn{display:flex;align-items:center;justify-content:center;gap:8px;background:var(--text);color:var(--bg);padding:8px;border-radius:var(--r);font-size:13px;font-weight:550;transition:transform .15s var(--spring),opacity .15s;white-space:nowrap}
-.import-btn:hover{opacity:.9}.import-btn:active{transform:scale(.97)}
+.import-btn{display:flex;align-items:center;justify-content:center;gap:8px;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:8px;border-radius:var(--r);font-size:13px;font-weight:550;transition:transform .15s var(--spring),background .15s,border-color .15s;white-space:nowrap}
+.import-btn svg{width:16px;height:16px;stroke:var(--accent)}
+.import-btn:hover{background:color-mix(in srgb,var(--accent) 10%,var(--surface2));border-color:color-mix(in srgb,var(--accent) 40%,var(--border))}
+.import-btn:active{transform:scale(.97)}
+
+/* ---------- Sidebar colapsado: solo iconos, sin textos que desborden ---------- */
+.sidebar.collapsed .brand{justify-content:center;padding:18px 0 14px}
+.sidebar.collapsed .brand-name,
+.sidebar.collapsed .nav-item span:not(.nav-badge),
+.sidebar.collapsed .import-btn span,
+.sidebar.collapsed .profile-row > div,
+.sidebar.collapsed .theme-quick{display:none}
+.sidebar.collapsed .nav-item{justify-content:center;gap:0;padding:9px 0}
+.sidebar.collapsed .nav-item .nav-badge{position:absolute;top:2px;right:8px}
+.sidebar.collapsed .nav-item{position:relative}
+.sidebar.collapsed .import-btn{padding:9px 0}
+.sidebar.collapsed .profile-row{justify-content:center;padding:6px 0}
+.sidebar.collapsed .sidebar-foot{padding:10px 6px}
 .profile-row{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:var(--r);cursor:pointer;white-space:nowrap}
 .profile-row:hover{background:var(--surface2)}
-.avatar{width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 55%,var(--text)));color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0}
+.avatar{width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 55%,var(--text)));color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0;overflow:hidden}
+.avatar img{border-radius:50%}
+.avatar-lg{width:56px;height:56px}
 .sync-dot{width:6px;height:6px;border-radius:50%;background:#3fb96f;margin-left:auto;box-shadow:0 0 0 3px color-mix(in srgb,#3fb96f 18%,transparent)}
 .theme-quick{display:flex;gap:5px;padding:2px 8px}
 .theme-quick button{width:20px;height:20px;border-radius:50%;border:1.5px solid var(--border);transition:transform .15s var(--spring)}
@@ -493,3 +511,25 @@ html.a11y-motion *,html.a11y-motion *::before,html.a11y-motion *::after{animatio
 
 /* En rutas inmersivas (lector, RSVP, estudio) las barras del shell no deben solaparse */
 #app.immersive .topbar,#app.immersive .bottomnav{display:none}
+
+/* ---------- Popup de logro con fuegos artificiales ---------- */
+.ach-pop{position:fixed;top:22px;left:50%;transform:translate(-50%,-16px) scale(.9);z-index:9000;
+  display:flex;align-items:center;gap:12px;padding:12px 18px 12px 14px;border-radius:16px;
+  background:var(--surface);border:1px solid var(--border);box-shadow:0 12px 40px rgba(0,0,0,.28);
+  opacity:0;transition:opacity .35s ease, transform .35s cubic-bezier(.2,.9,.3,1.4);pointer-events:none;max-width:min(92vw,360px)}
+.ach-pop.show{opacity:1;transform:translate(-50%,0) scale(1)}
+.ach-pop .ach-ico{font-size:30px;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,.25))}
+.ach-pop .ach-lab{font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);font-weight:650}
+.ach-pop .ach-name{font-size:15px;font-weight:600;color:var(--text);margin-top:1px}
+.ach-fw{position:absolute;top:0;left:26px;width:0;height:0;pointer-events:none}
+.ach-spark{position:absolute;width:7px;height:7px;border-radius:50%;background:var(--c);
+  opacity:0;animation:ach-spark 1100ms ease-out forwards}
+@keyframes ach-spark{0%{opacity:0;transform:translate(0,0) scale(.3)}
+  15%{opacity:1}100%{opacity:0;transform:translate(var(--x),var(--y)) scale(1)}}
+@media (max-width:640px){.ach-pop{top:14px}}
+@media (prefers-reduced-motion:reduce){.ach-spark{display:none}.ach-pop{transition:opacity .2s}}
+
+/* Distintivo de libro de demostración */
+.demo-badge{position:absolute;top:8px;left:8px;z-index:2;font-size:10px;font-weight:650;
+  letter-spacing:.05em;text-transform:uppercase;padding:3px 7px;border-radius:6px;
+  background:var(--accent);color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.25)}

@@ -48,6 +48,7 @@ DB.loadLibrary = async function () {
       progress: Number(p.progress || 0), chapter: p.chapter || '', lastRead: p.last_read ? relDate(p.last_read) : 'Nunca',
       avgWpm: p.avg_wpm || 0, sessions: p.sessions || 0, timeLeft: p.time_left || '—', readTime: p.read_time || '0 min',
       fav: !!p.favorite, done: !!p.done, archived: !!p.archived,
+      demo: d.owner_id == null, // documentos de catálogo (sin dueño) = demo
     };
   });
   return merged;
@@ -135,18 +136,30 @@ DB.unlockAchievement = async function (key) {
   if (error) throw error;
 };
 
+/* ---------- Perfil ---------- */
+DB.loadProfile = async function () {
+  const { data, error } = await DB.client.from('profiles').select('*').eq('id', DB.user.id).maybeSingle();
+  if (error) throw error;
+  return data || null;
+};
+DB.saveProfile = async function (acc) {
+  // Solo persiste display_name mientras las columnas extendidas no existan (ver migración 0004).
+  const row = { id: DB.user.id, display_name: acc.name };
+  if ('username' in acc) row.username = acc.username || null;
+  if ('bio' in acc) row.bio = acc.bio || null;
+  if ('avatar' in acc) row.avatar_url = acc.avatar || null;
+  if ('country' in acc) row.country = acc.country || null;
+  const { error } = await DB.client.from('profiles').upsert(row);
+  if (error) throw error;
+};
+
 /* ---------- Semilla inicial (primer login) ---------- */
 DB.seedIfEmpty = async function () {
   const { count } = await DB.client.from('progress').select('*', { count: 'exact', head: true }).eq('user_id', DB.user.id);
   if (count && count > 0) return false;
+  // Un único libro demo para no sobrecargar la cuenta nueva de datos que el usuario borrará.
   const seedProgress = [
-    ['habitos', .62, 'Cap. 11 — Camina despacio, pero nunca hacia atrás', 412, 23, '2 h 10 min', '6 h 40 min', true, false],
-    ['viento', .34, 'Cap. 16 — Esperanza', 388, 14, '9 h 05 min', '5 h 12 min', true, false],
-    ['meditaciones', .81, 'Libro VII', 356, 19, '48 min', '3 h 55 min', false, false],
-    ['paper_ia', .12, '2. Metodología', 298, 3, '31 min', '22 min', false, false],
-    ['apuntes', .55, 'Árboles equilibrados', 445, 7, '12 min', '55 min', false, false],
-    ['scifi', .05, 'Cap. 1 — Once minutos', 402, 2, '4 h 42 min', '18 min', false, false],
-    ['informe', 1, 'Completado', 365, 2, '—', '26 min', false, true],
+    ['habitos', 0, 'Principio del documento', 0, 0, '6 h 40 min', '0 min', false, false],
   ];
   const now = Date.now();
   await Promise.all(seedProgress.map(([doc_id, progress, chapter, avg_wpm, sessions, time_left, read_time, favorite, done], i) =>
