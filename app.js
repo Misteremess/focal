@@ -2677,8 +2677,8 @@ function renderLogin(opts){
   _authMode = (opts && opts.mode) || 'login';
   document.getElementById('app').innerHTML = `
   <div class="landing">
-    <video class="landing-bg" autoplay muted loop playsinline poster="landing-poster.jpg?v=8">
-      <source src="landing.mp4?v=8" type="video/mp4">
+    <video class="landing-bg" autoplay muted loop playsinline poster="landing-poster.jpg?v=9">
+      <source src="landing.mp4?v=9" type="video/mp4">
     </video>
     <div class="landing-overlay"></div>
     <div class="landing-content">
@@ -2789,6 +2789,13 @@ async function doRegister(){
     // Guarda datos de perfil pendientes para aplicarlos tras confirmar el correo.
     store.set('pendingProfile', { username, name: name || username, country, birthdate: birth });
     const data = await DB.signUp({ email, password: pass, username, displayName: name, birthdate: birth, country });
+    // Supabase devuelve un usuario con `identities` vacío cuando el correo YA existe
+    // (no reenvía verificación por seguridad). Avisamos en vez de mandar a "revisa tu correo".
+    if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0){
+      store.remove('pendingProfile');
+      authStatus('Ese correo ya tiene una cuenta. Inicia sesión o recupera tu contraseña.', '#e57373');
+      return;
+    }
     if (data.session){ /* sin confirmación: onAuthChange arranca la app */ }
     else { window._authSentMsg = `Enviamos un correo de verificación a ${email}. Confírmalo para activar tu cuenta.`; window._authResendEmail = email; authSwitch('sent'); }
   }catch(err){
