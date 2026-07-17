@@ -50,7 +50,8 @@ const I = {
 /* ---------- Estado ---------- */
 const store = {
   get(k, d){ try{ const v = localStorage.getItem('focal.'+k); return v===null? d : JSON.parse(v);}catch(e){return d} },
-  set(k, v){ localStorage.setItem('focal.'+k, JSON.stringify(v)); }
+  set(k, v){ localStorage.setItem('focal.'+k, JSON.stringify(v)); },
+  remove(k){ try{ localStorage.removeItem('focal.'+k); }catch(e){} }
 };
 const S = {
   theme: store.get('theme','paper'),
@@ -1351,6 +1352,7 @@ views.documento = (id) => {
           <button class="btn" title="Favorito" onclick="toggleFav('${d.id}')">${I.star} ${d.fav?'Quitar favorito':'Favorito'}</button>
           <button class="btn" onclick="renameDocument('${d.id}')">${I.note} Editar</button>
           <button class="btn" onclick="toggleArchive('${d.id}')">${I.library} ${d.archived?'Restaurar':'Archivar'}</button>
+          ${d.progress>0?`<button class="btn" onclick="resetProgress('${d.id}')">${I.refresh||I.back} Reiniciar progreso</button>`:''}
           <button class="btn" style="color:#c04545" onclick="deleteDocument('${d.id}')">${I.x} Eliminar</button>
         </div>
         <p style="font-size:12px;color:var(--text3);margin-top:14px">Lo que te queda tardaría <b>${minNormal} min</b> en lectura normal (250 ppm) y <b>${minRsvp} min</b> a tu velocidad RSVP actual (${S.rsvp.wpm} ppm).</p>
@@ -1435,13 +1437,14 @@ views.lector = (id) => {
       <button class="tb-icon" onclick="go('documento/${d.id}')">${I.back}</button>
       <div class="reader-title">${escHtml(d.title)} <span>· ${escHtml(d.chapter||'')}</span></div>
       <div style="flex:1"></div>
+      <span class="read-clock" title="Tiempo de esta sesión">${I.timer}<span id="read-timer">0:00</span></span>
       <button class="tb-icon" title="Contenidos" onclick="document.getElementById('toc-panel').classList.toggle('open')">${I.list}</button>
       <button class="tb-icon" title="Notas" onclick="document.getElementById('notes-panel').classList.toggle('open')">${I.note}</button>
       <button class="tb-icon" title="Buscar en el texto" onclick="openDocSearch('${d.id}')">${I.search}</button>
       <button class="tb-icon" title="Marcador" onclick="readerBookmark('${d.id}')">${I.bookmark}</button>
       <button class="tb-icon" title="Pantalla completa" onclick="toggleFS()">${I.expand}</button>
       <button class="tb-icon" title="Ajustes de lectura" onclick="openReadCtrl()">${I.sliders}</button>
-      <button class="btn accent sm" onclick="go('rsvp/${d.id}')">${I.zap} RSVP</button>
+      <button class="btn accent sm" onclick="readerToRsvp('${d.id}')">${I.zap} RSVP</button>
     </div>
     <div class="reader-body" id="rbody">
       <div class="reader-col" id="rcol" style="${readerColStyle()}">
@@ -1457,6 +1460,7 @@ views.lector = (id) => {
     <div class="sel-pop" id="selpop">
       ${Object.entries(HL_COLORS).map(([k,c])=>`<button title="Destacar en ${k}" style="background:${c}" onclick="createHighlight('${d.id}','${k}',false)"></button>`).join('')}
       <button title="Crear nota" class="sp-note" onclick="createHighlight('${d.id}','amber',true)">${I.note}</button>
+      <button title="Diccionario" class="sp-note" onclick="dictFromSelection()">${I.search}</button>
     </div>
     <aside class="side-panel left" id="toc-panel">
       <div class="sp-h">Contenidos <button class="modal-x" onclick="this.closest('.side-panel').classList.remove('open')">${I.x}</button></div>
@@ -1469,6 +1473,17 @@ views.lector = (id) => {
   </div>`;
 };
 let _readSaveT = null;
+/* ---------- Temporizador de sesión de lectura (contador visible) ---------- */
+const ReadTimer = { start:0, iv:null, mode:'', doc:null };
+function fmtClock(ms){ const s=Math.max(0,Math.floor(ms/1000)); const h=Math.floor(s/3600); const m=Math.floor((s%3600)/60); const ss=s%60; return (h?`${h}:${String(m).padStart(2,'0')}`:`${m}`)+`:${String(ss).padStart(2,'0')}`; }
+function startReadTimer(mode, docId){
+  stopReadTimer();
+  ReadTimer.start = Date.now(); ReadTimer.mode = mode; ReadTimer.doc = docId;
+  ReadTimer.iv = setInterval(updateReadTimerEl, 1000);
+  updateReadTimerEl();
+}
+function stopReadTimer(){ if (ReadTimer.iv){ clearInterval(ReadTimer.iv); ReadTimer.iv = null; } }
+function updateReadTimerEl(){ const el = document.getElementById('read-timer'); if (el) el.textContent = fmtClock(Date.now()-ReadTimer.start); }
 function initReader(docId){
   const body = document.getElementById('rbody'), reader = document.getElementById('reader');
   if (!body) return;
@@ -1498,7 +1513,8 @@ function initReader(docId){
     clearTimeout(_readSaveT);
     _readSaveT = setTimeout(()=>{
       try{ store.set('readpos.'+docId, p); }catch(e){}
-      if (d){ d.progress = Math.max(d.progress, p); d.done = d.progress>=.995; saveDocState(); }
+      // El progreso refleja la posición real de lectura (puede bajar al retroceder).
+      if (d){ d.progress = p; d.pos = Math.floor((tokenize(docText(docId)||'').length) * p); d.done = d.progress>=.995; saveDocState(); }
     }, 400);
     if (S.reader.focus) markFocusPara(body);
   });
@@ -1506,6 +1522,17 @@ function initReader(docId){
   // Popover de selección → destacado / nota
   body.addEventListener('mouseup', ()=>setTimeout(showSelPop, 10));
   body.addEventListener('touchend', ()=>setTimeout(showSelPop, 10));
+  // Al venir desde RSVP: efecto focus sobre el párrafo donde te quedaste.
+  if (window._flashPos != null){ const fp = window._flashPos; window._flashPos = null; setTimeout(()=>flashCurrentPara(body), 520); }
+  startReadTimer('Tradicional', docId);
+}
+// Resalta brevemente el párrafo situado en el centro del visor (ubicación rápida al cambiar de modo).
+function flashCurrentPara(body){
+  if (!body || !document.body.contains(body)) return;
+  const mid = body.getBoundingClientRect().top + body.clientHeight/2;
+  let best=null, bestDist=Infinity;
+  body.querySelectorAll('p[data-pi]').forEach(p=>{ const r=p.getBoundingClientRect(); const dist=Math.abs((r.top+r.bottom)/2 - mid); if(dist<bestDist){bestDist=dist;best=p;} });
+  if (best){ best.classList.add('para-flash'); setTimeout(()=>best.classList.remove('para-flash'), 2600); }
 }
 function markFocusPara(body){
   const mid = body.getBoundingClientRect().top + body.clientHeight/2;
@@ -1601,7 +1628,11 @@ const RSVP = {
 function saveRsvpPos(){
   const d = RSVP.doc; if (!d || !RSVP.words.length) return;
   d.pos = RSVP.i;
-  d.progress = Math.max(d.progress||0, Math.min(1, RSVP.i / RSVP.words.length));
+  // El progreso sigue la posición real: si retrocedes, el porcentaje baja.
+  d.progress = Math.min(1, RSVP.i / RSVP.words.length);
+  if (d.progress < .995) d.done = false;
+  // Mantén sincronizado el lector tradicional con la misma posición.
+  try{ store.set('readpos.'+d.id, d.progress); }catch(e){}
   saveDocState();
 }
 function orpIndex(w){ const c=w.replace(/[^\p{L}\p{N}]/gu,'').length; return c<=1?0:c<=5?1:c<=9?2:c<=13?3:4; }
@@ -1633,13 +1664,12 @@ views.rsvp = (id) => {
       <button class="tb-icon" onclick="rsvpExit()">${I.back}</button>
       <div class="reader-title">${d.title} <span>· ${d.chapter}</span></div>
       <div style="flex:1"></div>
-      <button class="tb-icon" title="Lector tradicional" onclick="go('lector/${d.id}')">${I.book}</button>
+      <button class="tb-icon" title="Lector tradicional" onclick="rsvpToReader()">${I.book}</button>
       <button class="tb-icon" title="Personalizar" onclick="document.getElementById('rsvp-set').classList.toggle('open')">${I.sliders}</button>
       <button class="tb-icon" title="Pantalla completa" onclick="toggleFS()">${I.expand}</button>
     </div>
-    <div class="rsvp-hud"><span id="hud-wpm">${S.rsvp.wpm} ppm</span><span id="hud-left">18 min restantes</span><span id="hud-prog">${Math.round(d.progress*100)} %</span></div>
+    <div class="rsvp-hud"><span id="hud-wpm">${S.rsvp.wpm} ppm</span><span class="read-clock">${I.timer}<span id="read-timer">0:00</span></span><span id="hud-left">18 min restantes</span><span id="hud-prog">${Math.round(d.progress*100)} %</span></div>
     <div class="rsvp-stage" id="stage">
-      <div class="adapt-ind" id="adapt"><i></i>velocidad adaptada</div>
       <div class="rsvp-ctx prev" id="ctx-prev"></div>
       <div class="orp-guides" id="guides"><span class="gv"></span><span class="gv b"></span></div>
       <div class="rsvp-word" id="word"></div>
@@ -1743,10 +1773,6 @@ function showWord(tick=true){
   const rp=document.getElementById('rprog'); if(rp) rp.style.width = (p*100)+'%';
   const hp=document.getElementById('hud-prog'); if(hp) hp.textContent = Math.round(p*100)+' %';
   const hl=document.getElementById('hud-left'); if(hl) hl.textContent = Math.max(1,Math.round((RSVP.words.length-RSVP.i)/S.rsvp.wpm))+' min restantes';
-  // indicador adaptativo
-  const w0 = chunk.split(' ')[0];
-  const ad = document.getElementById('adapt');
-  if (ad && RSVP.playing && S.rsvp.adaptive) ad.classList.toggle('show', /\d/.test(w0) || w0.replace(/[^\p{L}]/gu,'').length>9);
   updatePauseCard();
 }
 function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
@@ -1861,14 +1887,74 @@ function bindRsvp(){
   }, {passive:false});
   const stage = document.getElementById('stage');
   let tx=null;
-  stage.addEventListener('touchstart', e=>tx=e.touches[0].clientX, {passive:true});
-  stage.addEventListener('touchend', e=>{ if(tx===null)return; const dx=e.changedTouches[0].clientX-tx; if(Math.abs(dx)>60) rsvpSentence(dx>0?-1:1); else rsvpToggle(); tx=null; }, {passive:true});
+  bindRsvpTouch(stage);
+  startReadTimer(location.hash.includes('estudio') ? 'Modo estudio' : 'RSVP', RSVP.doc?.id);
 }
-function rsvpExit(){ clearTimeout(RSVP.timer); RSVP.playing=false; saveRsvpPos(); speechSynthesis?.cancel?.(); go('documento/'+RSVP.doc.id); }
+// En móvil el RSVP avanza SOLO mientras se mantiene pulsada la pantalla; al soltar, pausa.
+// Mantener pulsado oculta los menús para centrar el foco. Un deslizamiento navega por frases.
+function bindRsvpTouch(stage){
+  if (!stage) return;
+  let tx=null, ty=null, moved=false, held=false, holdT=null;
+  const wrap = () => document.getElementById('rsvpwrap');
+  stage.addEventListener('touchstart', e=>{
+    if (e.target.closest('.rsvp-settings')||e.target.closest('.modal')||e.target.closest('.pause-card')) return;
+    tx=e.touches[0].clientX; ty=e.touches[0].clientY; moved=false; held=false;
+    holdT = setTimeout(()=>{ held=true; wrap()?.classList.add('touch-hold'); if(!RSVP.playing) rsvpToggle(); }, 130);
+  }, {passive:true});
+  stage.addEventListener('touchmove', e=>{
+    if (tx===null) return;
+    const dx=e.touches[0].clientX-tx, dy=e.touches[0].clientY-ty;
+    if (Math.abs(dx)>12 || Math.abs(dy)>12) moved=true;
+  }, {passive:true});
+  stage.addEventListener('touchend', e=>{
+    if (tx===null) return;
+    clearTimeout(holdT);
+    const dx=e.changedTouches[0].clientX-tx;
+    if (held){ if (RSVP.playing) rsvpToggle(); wrap()?.classList.remove('touch-hold'); tx=null; return; }
+    // Toque corto: solo deslizamiento navega por frases; un tap simple no hace play/stop (evita errores).
+    if (moved && Math.abs(dx)>55) rsvpSentence(dx>0?-1:1);
+    tx=null;
+  }, {passive:true});
+  stage.addEventListener('touchcancel', ()=>{ clearTimeout(holdT); if(held&&RSVP.playing) rsvpToggle(); wrap()?.classList.remove('touch-hold'); tx=null; }, {passive:true});
+}
+function rsvpExit(){
+  clearTimeout(RSVP.timer);
+  if (RSVP.playing) rsvpToggle();
+  const hasActivity = RSVP.wordsRead > 0 || (Date.now()-RSVP.startedAt) > 20000;
+  if (RSVP.sessionSaved || !hasActivity){ saveRsvpPos(); stopReadTimer(); speechSynthesis?.cancel?.(); go('documento/'+RSVP.doc.id); return; }
+  // Confirmación: salir termina la sesión y registra progreso/tiempo.
+  confirmModal('Terminar sesión de lectura', 'Si sales ahora se terminará la sesión actual y se registrarán tu progreso y tu tiempo de lectura.', 'Terminar y salir', ()=>{
+    closeModal(); saveRsvpPos(); speechSynthesis?.cancel?.(); endSession();
+  }, false);
+}
+// Cambia de RSVP al lector tradicional conservando la posición exacta y marcando la frase.
+function rsvpToReader(){
+  const d = RSVP.doc; if (!d) return;
+  if (RSVP.playing) rsvpToggle();
+  saveRsvpPos(); // fija readpos = progreso actual
+  window._flashPos = d.progress; // el lector hará focus en esa posición
+  clearTimeout(RSVP.timer); speechSynthesis?.cancel?.();
+  go('lector/'+d.id);
+}
+// Cambia del lector al RSVP conservando la posición exacta.
+function readerToRsvp(docId){
+  const d = docById(docId); if (!d) return;
+  const body = document.getElementById('rbody');
+  if (body){
+    const ratio = body.scrollTop / Math.max(1, body.scrollHeight - body.clientHeight);
+    d.progress = Math.min(1, Math.max(0, ratio));
+    d.pos = Math.floor((tokenize(docText(docId)||'').length) * d.progress);
+    try{ store.set('readpos.'+docId, d.progress); }catch(e){}
+    saveDocState();
+  }
+  go('rsvp/'+docId);
+}
 function toggleFS(){ if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(()=>{}); }
 function saveVocabWord(word){
-  const definition = document.getElementById('dict-def')?.value.trim() || '';
-  const translation = document.getElementById('dict-tr')?.value.trim() || '';
+  // Usa las definiciones reales obtenidas del diccionario (hasta 3, unidas).
+  const defs = window._dictDefs || [];
+  const definition = defs.slice(0,3).map(d=>d.def).join(' · ');
+  const translation = '';
   const docId = RSVP.doc?.id || null;
   const [s,e] = RSVP.words.length ? sentenceBounds(Math.min(RSVP.i, RSVP.words.length-1)) : [0,-1];
   const context = e>=s ? RSVP.words.slice(s,e+1).join(' ') : '';
@@ -1883,16 +1969,35 @@ function speakWord(word){
   speechSynthesis.cancel(); speechSynthesis.speak(u);
 }
 function quickNote(){
-  const doc = RSVP.doc; if (!doc) { toast('Nota rápida creada','note'); return; }
-  const chunk = RSVP.words.slice(RSVP.i, RSVP.i + S.rsvp.chunk).join(' ');
+  const doc = RSVP.doc; if (!doc) { toast('Abre un documento para crear notas','x'); return; }
+  // Pausa la lectura para no perder el hilo mientras se personaliza la nota.
+  if (RSVP.playing) rsvpToggle();
   const [s,e] = sentenceBounds(RSVP.i);
-  const quote = RSVP.words.slice(s,e+1).join(' ');
-  const colors = ['amber','green','blue','rose']; const color = colors[Math.floor(Math.random()*colors.length)];
-  const entry = { id: 'local-'+Date.now(), doc: doc.id, color, text: quote || chunk, note: '', chapter: doc.chapter, date: 'Ahora mismo' };
-  DEMO_NOTES.unshift(entry);
-  saveNotes();
-  if (DB.user) DB.addNote(doc.id, { color, quote: entry.text, note: '', chapter: doc.chapter }).catch(console.error);
-  toast('Nota rápida creada','note');
+  const quote = RSVP.words.slice(s,e+1).join(' ') || RSVP.words.slice(RSVP.i, RSVP.i + S.rsvp.chunk).join(' ');
+  // Editor completo: la frase citada es editable y se puede elegir color y anotación.
+  window._newNoteCtx = { docId: doc.id, quote, chapter: doc.chapter };
+  openModal(`<div class="modal-h"><h3>Nueva nota</h3><button class="modal-x" onclick="closeModal()">${I.x}</button></div>
+  <div class="modal-b">
+    <div class="field"><label>Cita</label><textarea class="input" id="note-quote" style="height:64px;resize:vertical">${escHtml(quote)}</textarea></div>
+    <div class="field"><label>Anotación</label><textarea class="input" id="note-body" style="height:80px;resize:vertical" placeholder="Escribe tu comentario (opcional)…"></textarea></div>
+    <div class="field"><label>Color</label><div class="seg" id="note-color">${Object.entries(HL_COLORS).map(([k,c],i)=>`<button class="${i===0?'on':''}" data-c="${k}" onclick="segSel(this)"><span class="hl-dot" style="background:${c};display:inline-block"></span></button>`).join('')}</div></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" onclick="commitNewNote()">Guardar nota</button>
+    </div>
+  </div>`);
+  setTimeout(()=>document.getElementById('note-body')?.focus(), 60);
+}
+function commitNewNote(){
+  const ctx = window._newNoteCtx; if (!ctx) return;
+  const quote = document.getElementById('note-quote').value.trim();
+  const note = document.getElementById('note-body').value.trim();
+  const color = document.querySelector('#note-color button.on')?.dataset.c || 'amber';
+  if (!quote){ toast('La cita no puede estar vacía','x'); return; }
+  const entry = { id:'local-'+Date.now(), doc: ctx.docId, color, text: quote, note, chapter: ctx.chapter, date: fmtDate(new Date().toISOString()) };
+  DEMO_NOTES.unshift(entry); saveNotes();
+  if (DB.user) DB.addNote(ctx.docId, { color, quote, note, chapter: ctx.chapter }).catch(console.error);
+  closeModal(); toast('Nota guardada','note');
 }
 function quickBookmark(){
   if (!RSVP.doc){ toast('Abre un documento para crear marcadores','x'); return; }
@@ -1913,22 +2018,68 @@ function openBookmark(id){
   d.pos = bm.token; saveDocState(); go('rsvp/'+d.id);
 }
 function deleteBookmark(id){ setBookmarks(getBookmarks().filter(b=>b.id!==id)); toast('Marcador eliminado','x'); render(); }
+function resetProgress(id){
+  const d = docById(id); if (!d) return;
+  confirmModal('Reiniciar progreso', `Volverás al principio de «${escHtml(d.title)}». El porcentaje pasará a 0 %. Esto no borra tus notas ni marcadores.`, 'Reiniciar', ()=>{
+    d.progress = 0; d.pos = 0; d.done = false; d.chapter = d.chapter;
+    try{ store.remove ? store.remove('readpos.'+id) : store.set('readpos.'+id, 0); }catch(e){}
+    saveDocState();
+    if (DB.user) DB.upsertProgress(id, { progress: 0, done: false }).catch(console.error);
+    closeModal(); render(); toast('Progreso reiniciado','refresh');
+  });
+}
+function dictFromSelection(){
+  const t = (window._selText||'').trim().split(/\s+/)[0].replace(/[^\p{L}\p{N}]/gu,'');
+  document.getElementById('selpop')?.classList.remove('show');
+  if (t) openDict(t);
+}
 function openDict(word){
   const safe = word.replace(/'/g,"\\'");
   const [s,e] = RSVP.words.length ? sentenceBounds(Math.min(RSVP.i, RSVP.words.length-1)) : [0,-1];
   const context = e>=s ? RSVP.words.slice(s,e+1).join(' ') : '';
+  window._dictWord = word; window._dictDefs = [];
   openModal(`<div class="modal-h"><h3 class="serif" style="font-family:var(--serif);font-size:20px">${escHtml(word)}</h3><button class="modal-x" onclick="closeModal()">${I.x}</button></div>
   <div class="modal-b">
     ${context?`<p style="font-size:12.5px;color:var(--text2);line-height:1.55;margin-bottom:12px;border-left:2.5px solid var(--accent);padding-left:10px">“${escHtml(context)}”</p>`:''}
-    <p style="font-size:11.5px;color:var(--text3);margin-bottom:12px">Focal no tiene diccionario en línea: escribe tu propia definición o traducción para reforzar la memoria.</p>
-    <div class="field"><label>Definición</label><textarea class="input" id="dict-def" style="height:64px;resize:none" placeholder="Escribe una definición con tus palabras…"></textarea></div>
-    <div class="field"><label>Traducción (opcional)</label><input class="input" id="dict-tr" placeholder="Traducción a otro idioma"></div>
-    <div style="display:flex;gap:8px;margin-top:14px">
-      <button class="btn primary sm" onclick="saveVocabWord('${safe}')">Guardar en vocabulario</button>
+    <div id="dict-body"><p style="font-size:12.5px;color:var(--text3)">Buscando definición…</p></div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn primary sm" id="dict-save" onclick="saveVocabWord('${safe}')" disabled>Guardar en vocabulario</button>
       <button class="btn sm" onclick="speakWord('${safe}')">Escuchar</button>
       <button class="btn ghost sm" onclick="closeModal()">Cerrar</button>
     </div>
   </div>`);
+  fetchDefinition(word);
+}
+// Obtiene la(s) definición(es) reales de la palabra desde un diccionario abierto en español.
+async function fetchDefinition(word){
+  const body = document.getElementById('dict-body'); if (!body) return;
+  const clean = word.trim().toLowerCase();
+  try{
+    const r = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/es/${encodeURIComponent(clean)}`);
+    if (!r.ok) throw new Error('not found');
+    const data = await r.json();
+    const defs = [];
+    (data||[]).forEach(entry => (entry.meanings||[]).forEach(m => (m.definitions||[]).forEach(d => {
+      if (d.definition) defs.push({ pos: m.partOfSpeech || '', def: d.definition, ex: d.example || '' });
+    })));
+    if (!defs.length) throw new Error('empty');
+    window._dictDefs = defs;
+    if (!document.getElementById('dict-body')) return;
+    document.getElementById('dict-body').innerHTML = defs.slice(0,6).map((d,i)=>`
+      <div style="padding:8px 0;border-bottom:1px solid var(--border)">
+        <div style="display:flex;gap:8px;align-items:baseline">
+          <span class="mono" style="font-size:10px;color:var(--text3);min-width:16px">${i+1}.</span>
+          <div><span style="font-size:14px;line-height:1.5">${escHtml(d.def)}</span>
+          ${d.pos?`<span class="chip" style="font-size:9.5px;margin-left:6px">${escHtml(d.pos)}</span>`:''}
+          ${d.ex?`<div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:3px">“${escHtml(d.ex)}”</div>`:''}</div>
+        </div>
+      </div>`).join('');
+    const sv = document.getElementById('dict-save'); if (sv) sv.disabled = false;
+  }catch(e){
+    if (!document.getElementById('dict-body')) return;
+    document.getElementById('dict-body').innerHTML = `<p style="font-size:12.5px;color:var(--text3)">No se encontró «${escHtml(word)}» en el diccionario. Puedes guardarla igualmente para repasarla.</p>`;
+    const sv = document.getElementById('dict-save'); if (sv) sv.disabled = false;
+  }
 }
 /* Pomodoro real: basado en marcas de tiempo, coherente al cambiar de pestaña. */
 const POMO = { active:false, phase:'work', endAt:0, pausedLeft:null, workMin:25, breakMin:5, sound:true, iv:null };
@@ -2056,11 +2207,13 @@ function endSession(){
       <div class="stat"><b>${comp===null?'—':comp+'<em> %</em>'}</b><span>comprensión</span></div>
     </div>
     <div class="smart-tip" style="margin-top:0">${I.spark}<div>${sessionForecast(words)}</div></div>
-    <div style="display:flex;gap:10px;margin-top:20px">
+    <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap">
       <button class="btn" style="flex:1;justify-content:center" onclick="shareSessionCard(${mins},${words},${comp===null?'null':comp})">Compartir tarjeta</button>
-      <button class="btn" style="flex:1;justify-content:center" onclick="closeModal();quickNote();">Crear nota</button>
-      <button class="btn primary" style="flex:1;justify-content:center" onclick="closeModal();go('estadisticas')">Estadísticas</button>
+      <button class="btn" style="flex:1;justify-content:center" onclick="closeModal();go('estadisticas')">Estadísticas</button>
       <button class="btn accent" style="flex:1;justify-content:center" onclick="resumeAfterSummary()">Seguir leyendo</button>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:10px">
+      <button class="btn primary" style="flex:1;justify-content:center" onclick="closeModal();stopReadTimer();go('biblioteca')">${I.library} Volver a la biblioteca</button>
     </div>
   </div>`);
 }
@@ -2388,6 +2541,8 @@ function go(route){ location.hash = '#/' + route; }
 function render(){
   clearTimeout(RSVP.timer); clearTimeout(onbTimer);
   const hash = location.hash.replace(/^#\//,'') || (S.onboarded ? 'inicio' : 'onboarding');
+  // Detén el contador de sesión al salir de un modo de lectura.
+  if (!/^(lector|rsvp|estudio)\//.test(hash)) stopReadTimer();
   if (hash === 'onboarding'){ renderOnboarding(); return; }
   const [name, arg] = hash.split('/');
   const fn = views[name] || views.inicio;
