@@ -248,7 +248,7 @@ select.input{appearance:none;background-image:linear-gradient(45deg,transparent 
 
 /* ===== Lector tradicional ===== */
 .reader{position:fixed;inset:0;background:var(--bg);z-index:40;display:flex;flex-direction:column;animation:fadein .3s var(--ease)}
-.reader-top{display:flex;align-items:center;gap:10px;padding:12px 20px;position:absolute;top:0;left:0;right:0;z-index:5;background:linear-gradient(var(--bg) 55%,transparent);opacity:1;transition:opacity .4s,transform .4s var(--ease)}
+.reader-top{display:flex;align-items:center;gap:10px;padding:12px 20px;position:absolute;top:0;left:0;right:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--border);opacity:1;transition:opacity .4s,transform .4s var(--ease)}
 .reader.hide-ui .reader-top{opacity:0;transform:translateY(-8px);pointer-events:none}
 .reader-title{font-size:13px;font-weight:550;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .reader-title span{color:var(--text3);font-weight:450}
@@ -315,7 +315,8 @@ select.input{appearance:none;background-image:linear-gradient(45deg,transparent 
 .rb-speed button:hover{background:var(--surface2);color:var(--text)}
 .rsvp-foot{position:absolute;bottom:0;left:0;right:0;height:2.5px;background:var(--surface2)}
 .rsvp-foot i{display:block;height:100%;background:var(--accent);transition:width .25s linear}
-.rsvp-hud{position:absolute;top:18px;right:22px;display:flex;gap:16px;font-family:var(--mono);font-size:11px;color:var(--text3);transition:opacity .45s}
+.rsvp-hud{position:absolute;top:64px;right:22px;display:flex;gap:16px;font-family:var(--mono);font-size:11px;color:var(--text3);transition:opacity .45s,top .45s var(--ease)}
+.rsvp.playing .rsvp-hud{top:18px}
 .rsvp.playing .rsvp-hud{opacity:.5}
 .rsvp-settings{position:absolute;top:0;right:0;bottom:0;width:330px;background:var(--surface);border-left:1px solid var(--border);transform:translateX(100%);transition:transform .32s var(--ease);z-index:8;display:flex;flex-direction:column;box-shadow:-16px 0 40px var(--shadow)}
 .rsvp-settings.open{transform:none}

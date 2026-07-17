@@ -29,8 +29,8 @@ const I = {
   timer:'<svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9.5V13l2.5 1.5M9.5 2.5h5"/></svg>',
   eye:'<svg viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg>',
   expand:'<svg viewBox="0 0 24 24"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></svg>',
-  prev10:'<svg viewBox="0 0 24 24"><path d="m11 6-6 6 6 6M19 6l-6 6 6 6"/></svg>',
-  next10:'<svg viewBox="0 0 24 24"><path d="m13 6 6 6-6 6M5 6l6 6-6 6"/></svg>',
+  prev10:'<svg viewBox="0 0 24 24"><path d="m14.5 6-6 6 6 6"/></svg>',
+  next10:'<svg viewBox="0 0 24 24"><path d="m9.5 6 6 6-6 6"/></svg>',
   prevS:'<svg viewBox="0 0 24 24"><path d="M7 5v14M19 5l-9 7 9 7z"/></svg>',
   nextS:'<svg viewBox="0 0 24 24"><path d="M17 5v14M5 5l9 7-9 7z"/></svg>',
   sliders:'<svg viewBox="0 0 24 24"><path d="M4 8h9M17 8h3M4 16h3M11 16h9"/><circle cx="15" cy="8" r="2.2"/><circle cx="9" cy="16" r="2.2"/></svg>',
@@ -157,6 +157,9 @@ function toggleSidebar(){
 /* ---------- Portada ---------- */
 function coverHTML(d, extra=''){
   const c = d.cover;
+  if (c.img) return `<div class="cover ${extra}" style="background:${c.bg};aspect-ratio:1/${c.ratio};padding:0">
+    <img src="${c.img}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">
+  </div>`;
   return `<div class="cover ${extra}" style="background:${c.bg};color:${c.fg};aspect-ratio:1/${c.ratio}">
     <div><div class="c-rule" style="background:${c.accent}"></div><div class="c-title">${d.title}</div></div>
     <div><div class="c-label" style="color:${c.accent}">${c.label}</div><div class="c-author">${d.author}</div></div>
@@ -761,9 +764,9 @@ views.rsvp = (id) => {
     </div>
     <div class="rsvp-bar" id="rbar">
       <button class="rb-btn" title="Frase anterior (⇧←)" onclick="rsvpSentence(-1)">${I.prevS}</button>
-      <button class="rb-btn" title="Retroceder 10 (←)" onclick="rsvpSkip(-10)">${I.prev10}</button>
+      <button class="rb-btn" title="Palabra anterior (←)" onclick="rsvpSkip(-1)">${I.prev10}</button>
       <button class="rb-btn play" id="playbtn" onclick="rsvpToggle()">${I.play}</button>
-      <button class="rb-btn" title="Avanzar 10 (→)" onclick="rsvpSkip(10)">${I.next10}</button>
+      <button class="rb-btn" title="Palabra siguiente (→)" onclick="rsvpSkip(1)">${I.next10}</button>
       <button class="rb-btn" title="Frase siguiente (⇧→)" onclick="rsvpSentence(1)">${I.nextS}</button>
       <span class="rb-sep"></span>
       <div class="rb-speed">
@@ -918,7 +921,10 @@ function bindRsvp(){
   document.documentElement.style.setProperty('--ctx-op', S.rsvp.ctxOp);
   document.documentElement.style.setProperty('--rsvp-tdur', S.rsvp.tdur+'ms');
   wrap.addEventListener('mousemove', armIdle);
-  wrap.addEventListener('wheel', e=>{ rsvpSpeed(e.deltaY<0?10:-10); e.preventDefault(); }, {passive:false});
+  wrap.addEventListener('wheel', e=>{
+    if (e.target.closest('.rsvp-settings') || e.target.closest('.modal') || e.target.closest('.side-panel')) return; // scroll normal en paneles
+    rsvpSpeed(e.deltaY<0?10:-10); e.preventDefault();
+  }, {passive:false});
   const stage = document.getElementById('stage');
   let tx=null;
   stage.addEventListener('touchstart', e=>tx=e.touches[0].clientX, {passive:true});
@@ -1026,8 +1032,8 @@ views.estudio = (id) => {
         <div id="pausecard" style="display:none"></div>
       </div>
       <div style="display:flex;justify-content:center;gap:6px;padding:10px">
-        <button class="rb-btn" onclick="rsvpSkip(-10)">${I.prev10}</button>
-        <button class="rb-btn" onclick="rsvpSkip(10)">${I.next10}</button>
+        <button class="rb-btn" onclick="rsvpSkip(-1)">${I.prev10}</button>
+        <button class="rb-btn" onclick="rsvpSkip(1)">${I.next10}</button>
         <div class="rb-speed"><button onclick="rsvpSpeed(-25)">−</button><b id="wpmval">${S.rsvp.wpm} ppm</b><button onclick="rsvpSpeed(25)">+</button></div>
       </div>
     </section>
@@ -1261,8 +1267,8 @@ document.addEventListener('keydown', e => {
   if (e.key==='Escape'){ closeModal(); if (document.fullscreenElement) document.exitFullscreen(); return; }
   if (!inRsvp) return;
   if (e.key===' '){ e.preventDefault(); rsvpToggle(); }
-  else if (e.key==='ArrowLeft'){ e.shiftKey ? rsvpSentence(-1) : rsvpSkip(-10); }
-  else if (e.key==='ArrowRight'){ e.shiftKey ? rsvpSentence(1) : rsvpSkip(10); }
+  else if (e.key==='ArrowLeft'){ e.shiftKey ? rsvpSentence(-1) : rsvpSkip(-1); }
+  else if (e.key==='ArrowRight'){ e.shiftKey ? rsvpSentence(1) : rsvpSkip(1); }
   else if (e.key==='+'||e.key==='='){ rsvpSpeed(25); }
   else if (e.key==='-'){ rsvpSpeed(-25); }
   else if (e.key.toLowerCase()==='r'){ rsvpSentence(-1); }

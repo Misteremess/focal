@@ -62,6 +62,22 @@ function slugify(title){
     .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40) + '-' + Date.now().toString(36);
 }
 function countWords(text){ return (text.match(/\S+/g) || []).length; }
+// Reduce una imagen a miniatura JPEG (~360 px de ancho) para guardarla como portada.
+function shrinkImage(src, maxW = 360){
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxW / img.width);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', 0.82));
+    };
+    img.onerror = () => reject(new Error('imagen de portada ilegible'));
+    img.src = src;
+  });
+}
 function estimateReadTime(words, wpm){ const m = Math.round(words / (wpm||300)); return m < 1 ? '< 1 min' : m < 60 ? `${m} min` : `${Math.floor(m/60)} h ${m%60} min`; }
 
 /* ---------- Extractores por tipo ---------- */
@@ -81,7 +97,19 @@ async function extractPdf(file){
   }
   let meta = {};
   try { const info = (await doc.getMetadata()).info; meta = { title: info?.Title, author: info?.Author }; } catch(e){}
-  return { text: text.trim(), meta, pages: doc.numPages };
+  // Portada: render de la primera página.
+  let coverImg = null;
+  try {
+    const page1 = await doc.getPage(1);
+    const vp = page1.getViewport({ scale: 1 });
+    const scale = 360 / vp.width;
+    const viewport = page1.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(viewport.width); canvas.height = Math.round(viewport.height);
+    await page1.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+    coverImg = canvas.toDataURL('image/jpeg', 0.82);
+  } catch(e){ console.warn('Sin portada PDF:', e); }
+  return { text: text.trim(), meta, pages: doc.numPages, coverImg };
 }
 
 async function extractEpub(file){
@@ -107,7 +135,29 @@ async function extractEpub(file){
     const html = await entry.async('text');
     text += stripHtml(html) + '\n\n';
   }
-  return { text: text.trim(), meta: { title, author } };
+  // Portada: item con properties="cover-image" (EPUB 3) o <meta name="cover"> (EPUB 2).
+  let coverImg = null;
+  try {
+    let coverHref = null;
+    const item3 = [...opfDoc.querySelectorAll('manifest > item')].find(it => (it.getAttribute('properties')||'').includes('cover-image'));
+    if (item3) coverHref = item3.getAttribute('href');
+    if (!coverHref){
+      const metaCover = opfDoc.querySelector('metadata > meta[name="cover"]');
+      const coverId = metaCover?.getAttribute('content');
+      if (coverId && manifest[coverId]) coverHref = manifest[coverId];
+    }
+    if (coverHref){
+      const path = opfDir + coverHref;
+      const entry = zip.file(path) || zip.file(decodeURIComponent(path));
+      if (entry){
+        const ext = coverHref.toLowerCase().split('.').pop();
+        const mime = { jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', gif:'image/gif', webp:'image/webp', svg:'image/svg+xml' }[ext] || 'image/jpeg';
+        const b64 = await entry.async('base64');
+        coverImg = await shrinkImage(`data:${mime};base64,${b64}`);
+      }
+    }
+  } catch(e){ console.warn('Sin portada EPUB:', e); }
+  return { text: text.trim(), meta: { title, author }, coverImg };
 }
 
 async function extractDocx(file){
@@ -128,10 +178,11 @@ function extractorFor(filename){
 }
 
 /* ---------- Alta del documento en Focal ---------- */
-async function commitDocument({ title, author, type, text, chapterLabel }){
+async function commitDocument({ title, author, type, text, chapterLabel, coverImg }){
   const words = countWords(text);
   const id = slugify(title);
   const cover = makeCover(title);
+  if (coverImg) cover.img = coverImg;
   const doc = {
     id, title, author: author || 'Autor desconocido', type, pages: Math.max(1, Math.round(words / 280)), words,
     progress: 0, chapter: chapterLabel || 'Principio del documento', timeLeft: estimateReadTime(words, 300),
@@ -178,16 +229,16 @@ async function importFiles(fileList){
     const row = q.querySelector(`[data-name="${CSS.escape(file.name)}"]`);
     const statusEl = row.querySelector('.imp-status');
     try{
-      statusEl.textContent = 'Extrayendo texto…';
+      statusEl.textContent = 'Extrayendo texto y portada…';
       const extractor = extractorFor(file.name);
-      const { text, meta, pages } = await extractor(file);
+      const { text, meta, pages, coverImg } = await extractor(file);
       if (!text || countWords(text) < 5) throw new Error('No se encontró texto legible en el archivo');
       statusEl.textContent = 'Detectando título y autor…';
       const guessed = guessTitleAuthor(text, file.name);
       const title = (meta?.title && meta.title.trim()) || guessed.title;
       const author = (meta?.author && meta.author.trim()) || guessed.author;
       const type = file.name.split('.').pop().toUpperCase();
-      const doc = await commitDocument({ title, author, type, text });
+      const doc = await commitDocument({ title, author, type, text, coverImg });
       if (pages) doc.pages = pages;
       statusEl.textContent = `Listo · «${title}» · ${fmtWords(countWords(text))} palabras`;
       row.querySelector('.imp-prog')?.remove();
