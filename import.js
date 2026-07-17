@@ -3,6 +3,60 @@
 
 const IMPORT = { queue: [], activeTab: 0 };
 
+// Marca de cabecera de sección (carácter de separación de registro, invisible en el texto).
+// app.js lo usa para reconocer capítulos reales detectados desde el índice del EPUB.
+const SEC_MARK = '␞';
+
+// Primer encabezado (h1–h3) del HTML de un capítulo, como respaldo si no hay TOC.
+function firstHeading(html){
+  try{
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const h = doc.querySelector('h1,h2,h3');
+    const t = h && h.textContent ? h.textContent.replace(/\s+/g,' ').trim() : '';
+    return (t && t.length <= 80) ? t : '';
+  }catch(e){ return ''; }
+}
+
+// Lee el índice real del EPUB: nav.xhtml (EPUB3) o toc.ncx (EPUB2).
+// Devuelve un mapa { nombreDeFichero: títuloDelCapítulo } con la PRIMERA entrada por fichero.
+async function readEpubToc(zip, opfDoc, manifest, opfDir){
+  const map = {};
+  const add = (href, label) => {
+    if (!href || !label) return;
+    const base = href.split('/').pop().split('#')[0];
+    if (base && !map[base]) map[base] = label.replace(/\s+/g,' ').trim();
+  };
+  try {
+    // EPUB 3: item del manifest con properties="nav".
+    const navItem = Object.values(manifest).find(it => (it.props||'').split(/\s+/).includes('nav'));
+    if (navItem){
+      const entry = zip.file(opfDir + navItem.href) || zip.file(decodeURIComponent(opfDir + navItem.href));
+      if (entry){
+        const doc = new DOMParser().parseFromString(await entry.async('text'), 'text/html');
+        const nav = doc.querySelector('nav[*|type="toc"]') || doc.querySelector('nav#toc') || doc.querySelector('nav');
+        (nav || doc).querySelectorAll('a[href]').forEach(a => add(a.getAttribute('href'), a.textContent));
+        if (Object.keys(map).length) return map;
+      }
+    }
+    // EPUB 2: toc.ncx (referenciado por spine[toc] o por media-type en el manifest).
+    let ncxId = opfDoc.querySelector('spine')?.getAttribute('toc');
+    let ncxHref = ncxId && manifest[ncxId] ? manifest[ncxId].href
+      : (Object.values(manifest).find(it => (it.type||'').includes('dtbncx'))||{}).href;
+    if (ncxHref){
+      const entry = zip.file(opfDir + ncxHref) || zip.file(decodeURIComponent(opfDir + ncxHref));
+      if (entry){
+        const ncx = new DOMParser().parseFromString(await entry.async('text'), 'application/xml');
+        ncx.querySelectorAll('navMap navPoint').forEach(np => {
+          const label = np.querySelector('navLabel > text')?.textContent;
+          const src = np.querySelector('content')?.getAttribute('src');
+          add(src, label);
+        });
+      }
+    }
+  } catch(e){ console.warn('TOC EPUB no legible:', e); }
+  return map;
+}
+
 /* ---------- Carga perezosa de librerías (CDN) ---------- */
 const _libCache = {};
 function loadScript(src){
@@ -135,16 +189,39 @@ async function extractEpub(file){
   const title = opfDoc.querySelector('metadata > title, dc\\:title')?.textContent?.trim();
   const author = opfDoc.querySelector('metadata > creator, dc\\:creator')?.textContent?.trim();
   const manifest = {};
-  opfDoc.querySelectorAll('manifest > item').forEach(it => manifest[it.getAttribute('id')] = it.getAttribute('href'));
+  opfDoc.querySelectorAll('manifest > item').forEach(it => manifest[it.getAttribute('id')] = {
+    href: it.getAttribute('href'),
+    type: it.getAttribute('media-type') || '',
+    props: it.getAttribute('properties') || '',
+  });
   const spineIds = [...opfDoc.querySelectorAll('spine > itemref')].map(it => it.getAttribute('idref'));
+
+  // Índice real del libro: mapea el nombre de fichero de cada capítulo a su título del TOC.
+  // Prioriza el nav de EPUB3; si no, el toc.ncx de EPUB2. Así el índice coincide con el que
+  // muestran otros lectores en vez de adivinarlo por el texto.
+  const tocByFile = await readEpubToc(zip, opfDoc, manifest, opfDir);
+
   let text = '';
   for (const id of spineIds){
-    const href = manifest[id]; if (!href) continue;
-    const path = opfDir + href;
+    const item = manifest[id]; if (!item || !item.href) continue;
+    const path = opfDir + item.href;
     const entry = zip.file(path) || zip.file(decodeURIComponent(path));
     if (!entry) continue;
     const html = await entry.async('text');
-    text += stripHtmlEpub(html) + '\n\n';
+    const base = item.href.split('/').pop().split('#')[0];
+    // Título del capítulo: del TOC si existe; si no, el primer encabezado del propio fichero.
+    let title = tocByFile[base] || firstHeading(html);
+    let body = stripHtmlEpub(html);
+    if (title){
+      // Si el cuerpo empieza por el mismo título, quítalo para no duplicarlo.
+      const lines = body.split('\n');
+      if (lines[0] && lines[0].trim().toLowerCase() === title.trim().toLowerCase()){
+        body = lines.slice(1).join('\n').replace(/^\n+/, '');
+      }
+      text += `\n\n${SEC_MARK}${title.trim()}\n\n${body}\n\n`;
+    } else {
+      text += body + '\n\n';
+    }
   }
   // Portada: item con properties="cover-image" (EPUB 3) o <meta name="cover"> (EPUB 2).
   let coverImg = null;

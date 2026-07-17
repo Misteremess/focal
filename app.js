@@ -1425,8 +1425,11 @@ function docParas(id){
       if (!acc.length || acc[acc.length-1].split(' ').length > 70) acc.push(s); else acc[acc.length-1]+=' '+s; return acc; },[])
   ).filter(p=>p.trim());
 }
-// Detecta si un párrafo es una cabecera de sección (Prólogo, Capítulo 1, Parte II…).
-function paraHeading(p){
+// Cabecera marcada desde el índice real del EPUB (carácter SEC_MARK al inicio del párrafo).
+const _SEC = (typeof SEC_MARK !== 'undefined') ? SEC_MARK : '␞';
+function markedHeading(p){ const t = (p||'').replace(/^\s+/,''); return t.startsWith(_SEC) ? t.slice(_SEC.length).trim() : null; }
+// Heurística de respaldo para textos sin índice (TXT/MD o EPUB sin TOC).
+function heuristicHeading(p){
   const t = (p||'').trim();
   if (!t || t.length > 64) return null;
   if (/[.:;,]$/.test(t)) return null; // las frases normales acaban en puntuación
@@ -1435,14 +1438,24 @@ function paraHeading(p){
   if (/^(?:[IVXLCDM]{1,7}|\d{1,3})[.\-—)]\s+\S/i.test(t) && t.length<=48) return t; // «1. Metodología»
   return null;
 }
+function paraHeading(p){ return markedHeading(p) || heuristicHeading(p); }
+// Índice del documento: prioriza las cabeceras reales del EPUB; si no hay, usa la heurística;
+// y como último recurso divide en tramos regulares.
 function docSections(paras){
-  let secs = paras.map((p,i)=>({ i, h: paraHeading(p) })).filter(x=>x.h).map(x=>({ start:x.i, label:x.h }));
-  if (!secs.length){
-    // Sin cabeceras detectables: divide en tramos regulares como referencia de lectura.
-    const per = Math.max(4, Math.ceil(paras.length/8));
-    for (let i=0;i<paras.length;i+=per) secs.push({ start:i, label:`Sección ${Math.floor(i/per)+1}` });
-  } else if (secs[0].start > 0){
-    secs.unshift({ start:0, label:'Inicio' });
+  const marked = paras.map((p,i)=>({ i, h: markedHeading(p) })).filter(x=>x.h);
+  let secs;
+  if (marked.length){
+    secs = marked.map(x=>({ start:x.i, label:x.h }));
+  } else {
+    const heur = paras.map((p,i)=>({ i, h: heuristicHeading(p) })).filter(x=>x.h);
+    if (heur.length){
+      secs = heur.map(x=>({ start:x.i, label:x.h }));
+    } else {
+      secs = [];
+      const per = Math.max(4, Math.ceil(paras.length/8));
+      for (let i=0;i<paras.length;i+=per) secs.push({ start:i, label:`Sección ${Math.floor(i/per)+1}`, synthetic:true });
+      return secs;
+    }
   }
   return secs;
 }
@@ -1485,14 +1498,15 @@ views.lector = (id) => {
         <p class="ch-label">${escHtml(d.chapter||'')}</p>
         <h2>${escHtml(d.title)}</h2>
         <p style="color:var(--text3);font-family:var(--sans);font-size:12.5px;margin-bottom:2.2em">${escHtml(d.author)} · <span id="rhead-pct">${Math.round(d.progress*100)}</span> % completado</p>
-        ${paras.map((p,i)=>{
+        ${(()=>{ const hasMarks = paras.some(markedHeading); return paras.map((p,i)=>{
           const si = secs.findIndex(s=>s.start===i);
-          const isHead = !!paraHeading(p);
+          // En docs con índice real, solo las cabeceras marcadas se ocultan del cuerpo.
+          const isHead = hasMarks ? !!markedHeading(p) : !!heuristicHeading(p);
           let out = '';
-          if (si>=0) out += `<p class="ch-label section-head" id="sec-${si}"${si>0?' style="margin-top:2.6em"':''}>${escHtml(secs[si].label)}</p>`;
+          if (si>=0 && secs[si].label!=='Inicio') out += `<p class="ch-label section-head" id="sec-${si}"${si>0?' style="margin-top:2.6em"':''}>${escHtml(secs[si].label)}</p>`;
           if (!isHead) out += `<p data-pi="${i}"${(i===0&&si<0)?' id="sec-0"':''}>${applyHighlights(escHtml(p), d.id)}</p>`;
           return out;
-        }).join('')}
+        }).join(''); })()}
         <p style="text-align:center;color:var(--text3);font-family:var(--sans);font-size:12px;margin-top:3em">· · ·</p>
       </div>
     </div>
@@ -1780,7 +1794,7 @@ function syncWpm(){
 }
 function showWord(tick=true){
   const el = document.getElementById('word'); if (!el) return;
-  const chunk = RSVP.words.slice(RSVP.i, RSVP.i + S.rsvp.chunk).join(' ');
+  const chunk = RSVP.words.slice(RSVP.i, RSVP.i + S.rsvp.chunk).join(' ').split(_SEC).join('');
   if (!chunk){ endSession(); return; }
   if (tick && RSVP.playing && S.audio.voice && 'speechSynthesis' in window){
     const u = new SpeechSynthesisUtterance(chunk.replace(/[^\p{L}\p{N}\s]/gu,''));
@@ -1871,8 +1885,14 @@ function playTick(){
 /* Secciones para RSVP: índice de palabra donde empieza cada cabecera. */
 function computeRsvpSections(id){
   const paras = docParas(id);
+  const hasMarks = paras.some(markedHeading);
   const secs = []; let idx = 0;
-  for (const p of paras){ const h = paraHeading(p); const n = tokenize(p).length; if (h && idx>0) secs.push({ i: idx, label: h }); idx += n; }
+  for (const p of paras){
+    const h = hasMarks ? markedHeading(p) : heuristicHeading(p);
+    const n = tokenize(p).length;
+    if (h && idx>0) secs.push({ i: idx, label: h, len: n }); // len = tokens de la cabecera (a saltar)
+    idx += n;
+  }
   return secs;
 }
 /* Al llegar a una cabecera, pausa y muestra el título de la sección para identificarla. */
@@ -1883,6 +1903,7 @@ function maybeSectionPause(){
   if (!sec) return false;
   RSVP.shownSections.add(sec.i);
   RSVP.i = sec.i;
+  RSVP._pausedSecLen = sec.len || 0; // tokens de la cabecera a saltar al continuar
   RSVP.playing = false; clearTimeout(RSVP.timer);
   const wrap = document.getElementById('rsvpwrap'), btn = document.getElementById('playbtn');
   if (wrap) wrap.classList.remove('playing','idle','touch-hold');
@@ -1896,7 +1917,12 @@ function maybeSectionPause(){
   const tt = document.querySelector('.rsvp .reader-title'); if (tt) tt.innerHTML = `${escHtml(RSVP.doc.title)} <span>· ${escHtml(sec.label)}</span>`;
   return true;
 }
-function resumeFromSection(){ const pc = document.getElementById('pausecard'); if (pc) pc.innerHTML=''; if (!RSVP.playing) rsvpToggle(); }
+function resumeFromSection(){
+  const pc = document.getElementById('pausecard'); if (pc) pc.innerHTML='';
+  // Salta los tokens de la cabecera para empezar a leer directamente el cuerpo.
+  if (RSVP._pausedSecLen){ RSVP.i = Math.min(RSVP.words.length-1, RSVP.i + RSVP._pausedSecLen); RSVP._pausedSecLen = 0; showWord(false); }
+  if (!RSVP.playing) rsvpToggle();
+}
 /* Pregunta de comprensión durante la reproducción */
 function maybeQuiz(){
   if (S.comp.mode === 'off' || !RSVP.doc) return false;
@@ -2123,34 +2149,61 @@ function openDict(word){
   fetchDefinition(word);
 }
 // Obtiene la(s) definición(es) reales de la palabra desde un diccionario abierto en español.
+// Limpia el marcado wiki (plantillas y enlaces) de una definición de Wiktionary.
+function _cleanWiki(s){
+  return (s||'')
+    .replace(/\{\{plm\|([^}|]+)(\|[^}]*)?\}\}/gi,'$1')
+    .replace(/\{\{l\+?\|[^|}]*\|([^}|]+)(\|[^}]*)?\}\}/gi,'$1')
+    .replace(/\{\{[^}]*\}\}/g,'')
+    .replace(/\[\[[^\]|]*\|([^\]]+)\]\]/g,'$1')
+    .replace(/\[\[([^\]]+)\]\]/g,'$1')
+    .replace(/'''?/g,'')
+    .replace(/<[^>]+>/g,'')
+    .replace(/\s+/g,' ').trim();
+}
+// Extrae las acepciones en español del wikitexto de Wiktionary.
+function _parseWiktionary(wt){
+  const mi = wt.search(/==\s*(\{\{\s*lengua\s*\|\s*es\s*\}\}|Español)\s*==/i);
+  let sec = mi>=0 ? wt.slice(mi) : wt;
+  const nx = sec.slice(3).search(/\n==[^=]/); if (nx>=0) sec = sec.slice(0, nx+3);
+  const defs = []; let pos = '';
+  for (const line of sec.split('\n')){
+    const h = line.match(/^={3,}\s*(.+?)\s*={3,}\s*$/);
+    if (h){ pos = _cleanWiki(h[1].replace(/\{\{([^|}]+)[^}]*\}\}/,'$1')).replace(/^=+|=+$/g,'').trim(); continue; }
+    const d = line.match(/^;\s*\d+\s*(.*)$/);
+    if (d){ const rest = d[1]; const idx = rest.indexOf(':'); let def = _cleanWiki(idx>=0 ? rest.slice(idx+1) : rest); if (def) defs.push({ pos, def }); }
+  }
+  return defs;
+}
 async function fetchDefinition(word){
   const body = document.getElementById('dict-body'); if (!body) return;
-  const clean = word.trim().toLowerCase();
+  const clean = word.trim().toLowerCase().replace(/[^\p{L}\p{N}\- ]/gu,'');
+  const fail = (msg) => {
+    const b = document.getElementById('dict-body'); if (!b) return;
+    b.innerHTML = `<p style="font-size:12.5px;color:var(--text3)">${msg}</p>`;
+    const sv = document.getElementById('dict-save'); if (sv) sv.disabled = false;
+  };
   try{
-    const r = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/es/${encodeURIComponent(clean)}`);
-    if (!r.ok) throw new Error('not found');
-    const data = await r.json();
-    const defs = [];
-    (data||[]).forEach(entry => (entry.meanings||[]).forEach(m => (m.definitions||[]).forEach(d => {
-      if (d.definition) defs.push({ pos: m.partOfSpeech || '', def: d.definition, ex: d.example || '' });
-    })));
-    if (!defs.length) throw new Error('empty');
+    const url = `https://es.wiktionary.org/w/api.php?action=parse&page=${encodeURIComponent(clean)}&prop=wikitext&format=json&redirects=1&origin=*`;
+    const r = await fetch(url);
+    const j = await r.json();
+    const wt = j && j.parse && j.parse.wikitext && j.parse.wikitext['*'];
+    if (!wt) throw new Error('sin entrada');
+    const defs = _parseWiktionary(wt);
+    if (!defs.length) throw new Error('sin acepciones');
     window._dictDefs = defs;
     if (!document.getElementById('dict-body')) return;
-    document.getElementById('dict-body').innerHTML = defs.slice(0,6).map((d,i)=>`
+    document.getElementById('dict-body').innerHTML = defs.slice(0,8).map((d,i)=>`
       <div style="padding:8px 0;border-bottom:1px solid var(--border)">
         <div style="display:flex;gap:8px;align-items:baseline">
           <span class="mono" style="font-size:10px;color:var(--text3);min-width:16px">${i+1}.</span>
           <div><span style="font-size:14px;line-height:1.5">${escHtml(d.def)}</span>
-          ${d.pos?`<span class="chip" style="font-size:9.5px;margin-left:6px">${escHtml(d.pos)}</span>`:''}
-          ${d.ex?`<div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:3px">“${escHtml(d.ex)}”</div>`:''}</div>
+          ${d.pos?`<span class="chip" style="font-size:9.5px;margin-left:6px">${escHtml(d.pos)}</span>`:''}</div>
         </div>
-      </div>`).join('');
+      </div>`).join('') + `<p style="font-size:10.5px;color:var(--text3);margin-top:10px">Fuente: Wiktionary (es)</p>`;
     const sv = document.getElementById('dict-save'); if (sv) sv.disabled = false;
   }catch(e){
-    if (!document.getElementById('dict-body')) return;
-    document.getElementById('dict-body').innerHTML = `<p style="font-size:12.5px;color:var(--text3)">No se encontró «${escHtml(word)}» en el diccionario. Puedes guardarla igualmente para repasarla.</p>`;
-    const sv = document.getElementById('dict-save'); if (sv) sv.disabled = false;
+    fail(`No se encontró «${escHtml(word)}» en el diccionario. Puedes guardarla igualmente para repasarla.`);
   }
 }
 /* Pomodoro real: basado en marcas de tiempo, coherente al cambiar de pestaña. */
@@ -2677,8 +2730,8 @@ function renderLogin(opts){
   _authMode = (opts && opts.mode) || 'login';
   document.getElementById('app').innerHTML = `
   <div class="landing">
-    <video class="landing-bg" autoplay muted loop playsinline poster="landing-poster.jpg?v=9">
-      <source src="landing.mp4?v=9" type="video/mp4">
+    <video class="landing-bg" autoplay muted loop playsinline poster="landing-poster.jpg?v=10">
+      <source src="landing.mp4?v=10" type="video/mp4">
     </video>
     <div class="landing-overlay"></div>
     <div class="landing-content">
