@@ -30,6 +30,17 @@ function stripHtml(html){
   doc.querySelectorAll('script,style,nav,header,footer,noscript').forEach(el => el.remove());
   return (doc.body?.innerText || doc.documentElement.innerText || '').replace(/[ \t]+/g,' ').replace(/\n{3,}/g,'\n\n').trim();
 }
+// Variante para EPUB: preserva los títulos (h1–h6) como bloques propios para que
+// el lector detecte las secciones (Prólogo, Capítulo 1…).
+function stripHtmlEpub(html){
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  doc.querySelectorAll('script,style,nav,header,footer,noscript').forEach(el => el.remove());
+  doc.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(h => {
+    const t = (h.textContent||'').trim();
+    if (t) h.textContent = `\n\n${t}\n\n`;
+  });
+  return (doc.body?.innerText || doc.documentElement.innerText || '').replace(/[ \t]+/g,' ').replace(/\n{3,}/g,'\n\n').trim();
+}
 function stripMarkdown(md){
   return md
     .replace(/^```[\s\S]*?```$/gm, ' ')
@@ -133,7 +144,7 @@ async function extractEpub(file){
     const entry = zip.file(path) || zip.file(decodeURIComponent(path));
     if (!entry) continue;
     const html = await entry.async('text');
-    text += stripHtml(html) + '\n\n';
+    text += stripHtmlEpub(html) + '\n\n';
   }
   // Portada: item con properties="cover-image" (EPUB 3) o <meta name="cover"> (EPUB 2).
   let coverImg = null;
@@ -251,7 +262,13 @@ async function importFiles(fileList){
     }
   }
   if (okCount){
-    setTimeout(()=>{ closeModal(); toast(okCount===1 ? `«${lastDoc.title}» añadido a tu biblioteca` : `${okCount} documentos añadidos a tu biblioteca`, 'check'); render(); }, 900);
+    setTimeout(()=>{
+      closeModal();
+      toast(okCount===1 ? `«${lastDoc.title}» añadido a tu biblioteca` : `${okCount} documentos añadidos a tu biblioteca`, 'check');
+      // Si estamos en el onboarding, complétalo y abre el documento importado.
+      if (typeof S !== 'undefined' && !S.onboarded){ S.onboarded = true; store.set('onboarded', true); go('documento/'+lastDoc.id); }
+      else render();
+    }, 900);
   }
 }
 async function importFromUrl(url){

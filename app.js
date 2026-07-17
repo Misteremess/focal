@@ -1406,10 +1406,25 @@ function docParas(id){
       if (!acc.length || acc[acc.length-1].split(' ').length > 70) acc.push(s); else acc[acc.length-1]+=' '+s; return acc; },[])
   ).filter(p=>p.trim());
 }
+// Detecta si un párrafo es una cabecera de sección (Prólogo, Capítulo 1, Parte II…).
+function paraHeading(p){
+  const t = (p||'').trim();
+  if (!t || t.length > 64) return null;
+  if (/[.:;,]$/.test(t)) return null; // las frases normales acaban en puntuación
+  if (/^(pr[oó]logo|ep[ií]logo|prefacio|pr[eé]ambulo|introducci[oó]n|conclusi[oó]n|ep[ií]grafe|dedicatoria|agradecimientos|ap[eé]ndice|nota del autor|cap[ií]tulo\b|cap\.\s|parte\b|libro\b|secci[oó]n\b|tomo\b|acto\b|escena\b|chapter\b|part\b)/i.test(t)) return t;
+  if (/^(?:[IVXLCDM]{1,7}|\d{1,3})[.\-—)]?$/i.test(t)) return t;            // «VII», «12», «3.»
+  if (/^(?:[IVXLCDM]{1,7}|\d{1,3})[.\-—)]\s+\S/i.test(t) && t.length<=48) return t; // «1. Metodología»
+  return null;
+}
 function docSections(paras){
-  const per = Math.max(4, Math.ceil(paras.length/8));
-  const secs = [];
-  for (let i=0;i<paras.length;i+=per) secs.push({ start:i, label:`Sección ${secs.length+1}` });
+  let secs = paras.map((p,i)=>({ i, h: paraHeading(p) })).filter(x=>x.h).map(x=>({ start:x.i, label:x.h }));
+  if (!secs.length){
+    // Sin cabeceras detectables: divide en tramos regulares como referencia de lectura.
+    const per = Math.max(4, Math.ceil(paras.length/8));
+    for (let i=0;i<paras.length;i+=per) secs.push({ start:i, label:`Sección ${Math.floor(i/per)+1}` });
+  } else if (secs[0].start > 0){
+    secs.unshift({ start:0, label:'Inicio' });
+  }
   return secs;
 }
 function applyHighlights(html, docId){
@@ -1451,7 +1466,14 @@ views.lector = (id) => {
         <p class="ch-label">${escHtml(d.chapter||'')}</p>
         <h2>${escHtml(d.title)}</h2>
         <p style="color:var(--text3);font-family:var(--sans);font-size:12.5px;margin-bottom:2.2em">${escHtml(d.author)} · <span id="rhead-pct">${Math.round(d.progress*100)}</span> % completado</p>
-        ${paras.map((p,i)=>`${secs.some(s=>s.start===i&&s.start>0)?`<p class="ch-label" id="sec-${secs.findIndex(s=>s.start===i)}" style="margin-top:2.5em">${secs.find(s=>s.start===i).label}</p>`:''}<p data-pi="${i}" ${i===0?'id="sec-0"':''}>${applyHighlights(escHtml(p), d.id)}</p>`).join('')}
+        ${paras.map((p,i)=>{
+          const si = secs.findIndex(s=>s.start===i);
+          const isHead = !!paraHeading(p);
+          let out = '';
+          if (si>=0) out += `<p class="ch-label section-head" id="sec-${si}"${si>0?' style="margin-top:2.6em"':''}>${escHtml(secs[si].label)}</p>`;
+          if (!isHead) out += `<p data-pi="${i}"${(i===0&&si<0)?' id="sec-0"':''}>${applyHighlights(escHtml(p), d.id)}</p>`;
+          return out;
+        }).join('')}
         <p style="text-align:center;color:var(--text3);font-family:var(--sans);font-size:12px;margin-top:3em">· · ·</p>
       </div>
     </div>
@@ -1658,6 +1680,7 @@ views.rsvp = (id) => {
   RSVP.i = Math.max(0, Math.min(RSVP.words.length-1, savedPos)); RSVP.playing=false;
   RSVP.startedAt = Date.now(); RSVP.wordsRead=0; RSVP.maxWpm=S.rsvp.wpm; RSVP.pauses=0; RSVP.rewinds=0;
   RSVP.startPos = RSVP.i; RSVP.lastQuiz = Date.now(); RSVP.quizResults = []; RSVP.sessionSaved = false;
+  RSVP.sections = computeRsvpSections(d.id); RSVP.shownSections = new Set();
   setTimeout(()=>{ showWord(false); bindRsvp(); }, 40);
   return `<div class="rsvp" id="rsvpwrap">
     <div class="rsvp-top">
@@ -1809,6 +1832,7 @@ function scheduleNext(extra){
     if (RSVP.i >= RSVP.words.length){ RSVP.i = RSVP.words.length; rsvpToggle(); endSession(); return; }
     if (RSVP.wordsRead % 200 < S.rsvp.chunk) saveRsvpPos(); // autoguardado periódico
     playTick();
+    if (maybeSectionPause()) return;
     if (maybeQuiz()) return;
     showWord(true); scheduleNext(0);
   }, wordDelay(w) + extra);
@@ -1825,6 +1849,35 @@ function playTick(){
     o.connect(g); g.connect(_audioCtx.destination); o.start(); o.stop(_audioCtx.currentTime + .05);
   }catch(e){ /* sin soporte de audio */ }
 }
+/* Secciones para RSVP: índice de palabra donde empieza cada cabecera. */
+function computeRsvpSections(id){
+  const paras = docParas(id);
+  const secs = []; let idx = 0;
+  for (const p of paras){ const h = paraHeading(p); const n = tokenize(p).length; if (h && idx>0) secs.push({ i: idx, label: h }); idx += n; }
+  return secs;
+}
+/* Al llegar a una cabecera, pausa y muestra el título de la sección para identificarla. */
+function maybeSectionPause(){
+  const secs = RSVP.sections; if (!secs || !secs.length) return false;
+  const from = RSVP.i - S.rsvp.chunk;
+  const sec = secs.find(s => s.i > RSVP.startPos && s.i > from && s.i <= RSVP.i && !RSVP.shownSections.has(s.i));
+  if (!sec) return false;
+  RSVP.shownSections.add(sec.i);
+  RSVP.i = sec.i;
+  RSVP.playing = false; clearTimeout(RSVP.timer);
+  const wrap = document.getElementById('rsvpwrap'), btn = document.getElementById('playbtn');
+  if (wrap) wrap.classList.remove('playing','idle','touch-hold');
+  if (btn) btn.innerHTML = I.play;
+  if (RSVP.doc){ RSVP.doc.chapter = sec.label; saveDocState(); }
+  saveRsvpPos();
+  const pc = document.getElementById('pausecard');
+  if (pc) pc.innerHTML = `<div class="pause-card section-pause"><div class="pc-label">Nueva sección</div>
+    <div class="pc-sent serif" style="font-family:var(--serif);font-size:24px;font-weight:600">${escHtml(sec.label)}</div>
+    <div style="margin-top:16px"><button class="btn primary sm" onclick="resumeFromSection()">Continuar leyendo</button></div></div>`;
+  const tt = document.querySelector('.rsvp .reader-title'); if (tt) tt.innerHTML = `${escHtml(RSVP.doc.title)} <span>· ${escHtml(sec.label)}</span>`;
+  return true;
+}
+function resumeFromSection(){ const pc = document.getElementById('pausecard'); if (pc) pc.innerHTML=''; if (!RSVP.playing) rsvpToggle(); }
 /* Pregunta de comprensión durante la reproducción */
 function maybeQuiz(){
   if (S.comp.mode === 'off' || !RSVP.doc) return false;
@@ -2402,46 +2455,56 @@ let calibStep = 0;
 views.calibracion = () => {
   setTimeout(runCalib, 60);
   return `<div class="onb">
-    <button class="onb-skip" onclick="go('inicio')">Salir</button>
+    <button class="onb-skip" onclick="cancelCalib()">Salir</button>
     <div class="onb-card">
       <p class="eyebrow">Calibración de velocidad</p>
-      <h1>Leyendo a <span class="mono" id="calib-wpm" style="font-family:var(--mono)">300</span> ppm</h1>
-      <p>Lee con normalidad. Iremos subiendo la velocidad y al final te preguntaremos por el contenido para calcular tu punto óptimo.</p>
+      <h1>Leyendo a <span class="mono" id="calib-wpm" style="font-family:var(--mono)">250</span> ppm</h1>
+      <p>Lee con normalidad. La velocidad subirá poco a poco. <b>En cuanto notes que ya no puedes seguir el ritmo</b>, pulsa el botón: esa es tu velocidad techo real.</p>
       <div class="onb-demo-word rsvp-word" id="word" style="font-size:44px;justify-content:center"></div>
       <div class="pbar" style="max-width:280px;margin:0 auto 30px"><i id="calib-prog" style="width:0%"></i></div>
       <div class="onb-actions">
-        <button class="btn" onclick="go('inicio')">Cancelar</button>
-        <button class="btn primary" onclick="finishCalib()">Terminar test</button>
+        <button class="btn" onclick="cancelCalib()">Cancelar</button>
+        <button class="btn accent" onclick="calibTooFast()">Ya no puedo seguir el ritmo</button>
       </div>
+      <p style="font-size:11.5px;color:var(--text3);margin-top:12px">Después responderás 2 preguntas rápidas sobre lo leído para ajustar la recomendación a tu comprensión real.</p>
     </div>
   </div>`;
 };
-const CALIB = { wpm:300, maxWpm:300, n:0, answers:[] };
+const CALIB = { wpm:250, maxWpm:250, n:0, answers:[], done:false, ceiling:0 };
 function runCalib(){
-  RSVP.words = tokenize(DEMO_TEXTS.meditaciones); RSVP.i = 0;
-  CALIB.wpm = 300; CALIB.maxWpm = 300; CALIB.n = 0; CALIB.answers = [];
+  clearTimeout(RSVP.timer);
+  RSVP.words = tokenize(docText('habitos') || DEMO_TEXTS.habitos); RSVP.i = 0;
+  Object.assign(CALIB, { wpm:250, maxWpm:250, n:0, answers:[], done:false, ceiling:0 });
+  const MAX = 900;
   const step = () => {
-    const el = document.getElementById('word'); if (!el) return;
+    const el = document.getElementById('word'); if (!el || CALIB.done) return;
     const w = RSVP.words[RSVP.i % RSVP.words.length]; RSVP.i++; CALIB.n++;
     const oi = orpIndex(w);
     el.innerHTML = `<span class="pre" style="flex:1;text-align:right">${esc(w.slice(0,oi))}</span><span class="orp">${esc(w[oi]||'')}</span><span class="post" style="flex:1;text-align:left">${esc(w.slice(oi+1))}</span>`;
-    if (CALIB.n % 30 === 0){ CALIB.wpm += 40; CALIB.maxWpm = CALIB.wpm; const e2=document.getElementById('calib-wpm'); if(e2) e2.textContent = CALIB.wpm; }
-    const p=document.getElementById('calib-prog'); if(p) p.style.width = Math.min(100, CALIB.n/1.8)+'%';
-    if (CALIB.n < 180) RSVP.timer = setTimeout(step, 60000/CALIB.wpm);
-    else finishCalib();
+    // Sube el ritmo de forma gradual cada ~16 palabras hasta el techo.
+    if (CALIB.n % 16 === 0 && CALIB.wpm < MAX){ CALIB.wpm += 25; CALIB.maxWpm = CALIB.wpm; const e2=document.getElementById('calib-wpm'); if(e2) e2.textContent = CALIB.wpm; }
+    const p=document.getElementById('calib-prog'); if(p) p.style.width = Math.min(100, (CALIB.wpm-250)/(MAX-250)*100)+'%';
+    if (CALIB.wpm >= MAX && CALIB.n % 16 === 0){ calibTooFast(); return; } // alcanzó el máximo medible
+    RSVP.timer = setTimeout(step, 60000/CALIB.wpm);
   };
   step();
 }
+function calibStop(){ CALIB.done = true; clearTimeout(RSVP.timer); }
+function cancelCalib(){ calibStop(); go(S.onboarded ? 'inicio' : 'onboarding'); }
+// El usuario alcanzó su techo: registra la velocidad y pasa a comprensión.
+function calibTooFast(){ calibStop(); CALIB.ceiling = CALIB.wpm; finishCalib(); }
 function finishCalib(){
-  clearTimeout(RSVP.timer);
-  // Comprobación breve de comprensión sobre el texto de calibración.
-  const qs = (typeof QUIZ !== 'undefined' && QUIZ.meditaciones) ? QUIZ.meditaciones.slice(0,2) : [];
+  calibStop();
+  if (!CALIB.ceiling) CALIB.ceiling = CALIB.wpm;
+  // Comprobación breve de comprensión sobre el texto que se acaba de leer.
+  const qs = (typeof QUIZ !== 'undefined' && QUIZ.habitos) ? QUIZ.habitos.slice(0,2) : [];
   if (!qs.length){ showCalibResult(1); return; }
   let qi = 0;
   const ask = () => {
     const q = qs[qi];
-    openModal(`<div class="modal-h"><h3>Pregunta ${qi+1} de ${qs.length}</h3></div>
-    <div class="modal-b"><p style="font-size:14.5px;font-weight:550;margin-bottom:14px">${q.q}</p>
+    openModal(`<div class="modal-h"><h3>Comprensión · pregunta ${qi+1} de ${qs.length}</h3></div>
+    <div class="modal-b"><p style="font-size:12.5px;color:var(--text3);margin-bottom:10px">Responde según lo que acabas de leer durante la calibración.</p>
+    <p style="font-size:14.5px;font-weight:550;margin-bottom:14px">${q.q}</p>
     ${q.opts.map((o,i)=>`<button class="btn" style="width:100%;justify-content:flex-start;margin-bottom:8px" onclick="window._calibAns(${i})">${o}</button>`).join('')}</div>`);
   };
   window._calibAns = (i) => {
@@ -2453,8 +2516,8 @@ function finishCalib(){
   ask();
 }
 function showCalibResult(accuracy){
-  // Recomendación real: velocidad máxima alcanzada, corregida por la comprensión demostrada.
-  const comfort = Math.round((CALIB.maxWpm - 40) / 5) * 5;
+  // Recomendación real: velocidad techo alcanzada, corregida por la comprensión demostrada.
+  const comfort = Math.round((CALIB.ceiling - 25) / 5) * 5;
   const factor = accuracy >= 1 ? 1 : accuracy >= .5 ? .85 : .7;
   const rec = Math.max(200, Math.round(comfort * factor / 5) * 5);
   const compPct = Math.round(accuracy*100);

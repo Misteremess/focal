@@ -553,3 +553,9 @@ p.para-flash{animation:paraFlash 2.6s ease-out}
   .rsvp-hud{top:56px}
   .rsvp.playing .rsvp-hud{top:14px}
 }
+
+/* ---------- Fase 3: cabeceras de sección ---------- */
+.reader-col .ch-label.section-head{font-family:var(--serif);font-size:1.15em;font-weight:600;color:var(--text);
+  letter-spacing:-.01em;padding-bottom:.4em;border-bottom:1px solid var(--border);margin-bottom:1em;text-transform:none}
+.pause-card.section-pause{border-color:color-mix(in srgb,var(--accent) 40%,var(--border))}
+.pause-card.section-pause .pc-label{color:var(--accent)}
