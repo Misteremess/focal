@@ -15,15 +15,49 @@ DB.init = async function () {
 
 DB.onAuthChange = (cb) => {
   if (!DB.client) return;
-  DB.client.auth.onAuthStateChange((_event, session) => cb(session?.user || null));
+  DB.client.auth.onAuthStateChange((event, session) => cb(session?.user || null, event));
 };
 
-DB.signInWithEmail = async (email) => {
-  const { error } = await DB.client.auth.signInWithOtp({
-    email,
-    options: { emailRedirectTo: window.location.origin },
+/* ---------- Registro / acceso con usuario y contraseña ---------- */
+DB.signUp = async ({ email, password, username, displayName, birthdate, country }) => {
+  const { data, error } = await DB.client.auth.signUp({
+    email, password,
+    options: {
+      emailRedirectTo: window.location.origin,
+      data: { username, display_name: displayName || username, birthdate: birthdate || null, country: country || null },
+    },
   });
   if (error) throw error;
+  return data; // data.session === null cuando se requiere confirmar el correo
+};
+DB.signInWithPassword = async (email, password) => {
+  const { data, error } = await DB.client.auth.signInWithPassword({ email, password });
+  if (error) throw error;
+  return data;
+};
+// Enlace mágico (opcional, se conserva como alternativa sin contraseña).
+DB.signInWithEmail = async (email) => {
+  const { error } = await DB.client.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin } });
+  if (error) throw error;
+};
+DB.resetPassword = async (email) => {
+  const { error } = await DB.client.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+  if (error) throw error;
+};
+DB.updatePassword = async (password) => {
+  const { error } = await DB.client.auth.updateUser({ password });
+  if (error) throw error;
+};
+DB.resendConfirmation = async (email) => {
+  const { error } = await DB.client.auth.resend({ type: 'signup', email });
+  if (error) throw error;
+};
+// Comprueba disponibilidad del nombre de usuario (requiere política de lectura pública en profiles).
+DB.usernameTaken = async (username) => {
+  try{
+    const { data } = await DB.client.from('profiles').select('id').eq('username', username).maybeSingle();
+    return !!data;
+  }catch(e){ return false; }
 };
 
 DB.signOut = () => DB.client.auth.signOut();

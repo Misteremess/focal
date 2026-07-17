@@ -1123,6 +1123,8 @@ views.ajustes = () => {
     </div>
     <button class="btn primary sm" onclick="saveAccount()">Guardar cambios</button>
     <div class="hr"></div>
+    ${DB.user?`<div class="setrow"><div><div class="sr-t">Contraseña</div><div class="sr-d">Cambia tu contraseña de acceso</div></div><button class="btn sm" onclick="openChangePassword()">Cambiar contraseña</button></div>
+    <div class="setrow"><div><div class="sr-t">Cerrar sesión</div><div class="sr-d">Salir de tu cuenta en este dispositivo</div></div><button class="btn sm" onclick="DB.signOut()">Cerrar sesión</button></div>`:''}
     <div class="setrow"><div><div class="sr-t">Plan</div><div class="sr-d">${DB.user?'Cuenta sincronizada con Supabase':'Modo local: los datos viven en este navegador. Configura Supabase para sincronizar entre dispositivos.'}</div></div></div>`;
   else if (tab==='idioma') body = `
     <div class="setrow"><div><div class="sr-t">Formato regional</div><div class="sr-d">Afecta a fechas y números en toda la aplicación.</div></div><select class="input" style="width:200px" onchange="S.locale=this.value;store.set('locale',S.locale);render();toast('Formato regional aplicado')">
@@ -1146,6 +1148,23 @@ views.ajustes = () => {
   </div></div>`;
 };
 function segSel(btn){ [...btn.parentElement.children].forEach(b=>b.classList.remove('on')); btn.classList.add('on'); }
+function openChangePassword(){
+  openModal(`<div class="modal-h"><h3>Cambiar contraseña</h3><button class="modal-x" onclick="closeModal()">${I.x}</button></div>
+  <div class="modal-b">
+    <div class="field"><label>Nueva contraseña</label><input class="input" id="cp1" type="password" autocomplete="new-password" placeholder="Mínimo 8 caracteres"></div>
+    <div class="field"><label>Confirmar contraseña</label><input class="input" id="cp2" type="password" autocomplete="new-password"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" onclick="commitChangePassword()">Guardar</button>
+    </div>
+  </div>`);
+}
+function commitChangePassword(){
+  const p1 = document.getElementById('cp1').value, p2 = document.getElementById('cp2').value;
+  if (p1.length < 8){ toast('Mínimo 8 caracteres','x'); return; }
+  if (p1 !== p2){ toast('Las contraseñas no coinciden','x'); return; }
+  DB.updatePassword(p1).then(()=>{ closeModal(); toast('Contraseña actualizada','check'); }).catch(err=>toast(err.message,'x'));
+}
 function avatarInner(acc, fontSize){
   if (acc && acc.avatar) return `<img src="${acc.avatar}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">`;
   const src = (acc && (acc.name || acc.username)) || 'MD';
@@ -2652,31 +2671,157 @@ document.addEventListener('keydown', e => {
   else if (e.key.toLowerCase()==='t'){ const keys=Object.keys(THEMES); applyTheme(keys[(keys.indexOf(S.theme)+1)%keys.length]); toast('Tema '+(THEMES[S.theme]?.name||''),'sun'); }
 });
 
-/* ---------- Autenticación (puerta de entrada) ---------- */
-function renderLogin(status){
-  document.getElementById('app').innerHTML = `<div class="onb">
-    <div class="onb-card" style="width:min(420px,100%)">
-      <div class="brand" style="justify-content:center;margin-bottom:8px"><span class="brand-dot"></span><span style="font-weight:650;font-size:19px">Focal</span></div>
-      <h1 style="font-size:22px;margin-top:18px">Entra en tu biblioteca</h1>
-      <p>Te enviamos un enlace mágico a tu correo. Sin contraseñas — ábrelo desde este mismo dispositivo.</p>
-      <div class="field" style="text-align:left;margin-top:24px">
-        <label>Correo electrónico</label>
-        <input class="input" id="login-email" type="email" placeholder="tú@correo.com" autocomplete="email" onkeydown="if(event.key==='Enter')sendMagicLink()">
+/* ---------- Autenticación (landing + acceso con usuario y contraseña) ---------- */
+let _authMode = 'login';
+function renderLogin(opts){
+  _authMode = (opts && opts.mode) || 'login';
+  document.getElementById('app').innerHTML = `
+  <div class="landing">
+    <video class="landing-bg" autoplay muted loop playsinline poster="landing-poster.jpg?v=8">
+      <source src="landing.mp4?v=8" type="video/mp4">
+    </video>
+    <div class="landing-overlay"></div>
+    <div class="landing-content">
+      <div class="landing-pitch">
+        <div class="brand" style="margin-bottom:22px"><span class="brand-dot"></span><span style="font-weight:700;font-size:24px;color:#fff">Focal</span></div>
+        <h1 class="landing-h1">Lee más rápido.<br>Comprende mejor.</h1>
+        <p class="landing-sub">Lectura RSVP: el texto aparece palabra a palabra en un punto fijo, eliminando el movimiento ocular que te frena. Tu biblioteca, tus notas y tu progreso, sincronizados.</p>
+        <ul class="landing-feats">
+          <li>${I.zap} Velocidad ajustable de 50 a 2.000 ppm</li>
+          <li>${I.book} Importa PDF, EPUB, DOCX y más</li>
+          <li>${I.target} Estadísticas, logros y objetivos reales</li>
+        </ul>
       </div>
-      <div class="onb-actions" style="margin-top:6px"><button class="btn primary" style="width:100%;justify-content:center" onclick="sendMagicLink()">Enviar enlace mágico</button></div>
-      <p id="login-status" style="margin-top:16px;font-size:12.5px;color:var(--text3)">${status||''}</p>
+      <div class="landing-card">
+        <div id="auth-panel">${authPanel()}</div>
+      </div>
     </div>
   </div>`;
+  setTimeout(()=>{ const v=document.querySelector('.landing-bg'); if(v){ v.play().catch(()=>{}); } document.getElementById('auth-first')?.focus(); }, 60);
 }
-function sendMagicLink(){
-  const email = document.getElementById('login-email').value.trim();
-  const status = document.getElementById('login-status');
-  if (!email || !email.includes('@')){ status.textContent = 'Escribe un correo válido.'; status.style.color = '#c04545'; return; }
-  status.textContent = 'Enviando…'; status.style.color = 'var(--text3)';
-  DB.signInWithEmail(email).then(()=>{
-    status.textContent = `Enlace enviado a ${email}. Revisa tu bandeja de entrada.`; status.style.color = '#3fb96f';
-  }).catch(err=>{ status.textContent = 'No se pudo enviar: ' + err.message; status.style.color = '#c04545'; });
+function authSwitch(mode){ _authMode = mode; const p = document.getElementById('auth-panel'); if (p){ p.innerHTML = authPanel(); setTimeout(()=>document.getElementById('auth-first')?.focus(),40); } }
+function authStatus(msg, color){ const el = document.getElementById('auth-status'); if (el){ el.textContent = msg; el.style.color = color || 'var(--text3)'; } }
+function authPanel(){
+  const tabs = `<div class="auth-tabs">
+    <button class="${_authMode==='login'?'on':''}" onclick="authSwitch('login')">Iniciar sesión</button>
+    <button class="${_authMode==='register'?'on':''}" onclick="authSwitch('register')">Crear cuenta</button>
+  </div>`;
+  if (_authMode==='recovery') return `
+    <h2 class="auth-title">Nueva contraseña</h2>
+    <p class="auth-lead">Introduce tu nueva contraseña para completar la recuperación.</p>
+    <div class="field"><label>Nueva contraseña</label><input class="input" id="auth-first" type="password" autocomplete="new-password" placeholder="Mínimo 8 caracteres"></div>
+    <div class="field"><label>Confirmar contraseña</label><input class="input" id="rec-pass2" type="password" autocomplete="new-password" onkeydown="if(event.key==='Enter')doRecovery()"></div>
+    <button class="btn primary" style="width:100%;justify-content:center" onclick="doRecovery()">Guardar contraseña</button>
+    <p id="auth-status" class="auth-status"></p>`;
+  if (_authMode==='forgot') return `
+    <h2 class="auth-title">Recuperar contraseña</h2>
+    <p class="auth-lead">Te enviaremos un enlace a tu correo para restablecerla.</p>
+    <div class="field"><label>Correo electrónico</label><input class="input" id="auth-first" type="email" autocomplete="email" placeholder="tú@correo.com" onkeydown="if(event.key==='Enter')doForgot()"></div>
+    <button class="btn primary" style="width:100%;justify-content:center" onclick="doForgot()">Enviar enlace</button>
+    <button class="btn ghost" style="width:100%;justify-content:center;margin-top:8px" onclick="authSwitch('login')">Volver</button>
+    <p id="auth-status" class="auth-status"></p>`;
+  if (_authMode==='sent') return `
+    <div style="text-align:center;padding:10px 0">
+      <div style="font-size:40px">✉️</div>
+      <h2 class="auth-title" style="margin-top:8px">Revisa tu correo</h2>
+      <p class="auth-lead">${window._authSentMsg||'Te hemos enviado un correo. Ábrelo para continuar.'}</p>
+      <button class="btn" style="margin-top:6px" onclick="authSwitch('login')">Volver al inicio</button>
+      <p style="font-size:11.5px;color:var(--text3);margin-top:14px">¿No lo recibes? Revisa spam o <a style="color:var(--accent);cursor:pointer" onclick="resendConfirm()">reenvíalo</a>.</p>
+    </div>`;
+  if (_authMode==='register') return `
+    ${tabs}
+    <div class="auth-scroll">
+    <div class="field"><label>Nombre de usuario *</label><input class="input" id="auth-first" placeholder="tu_usuario" autocomplete="username"></div>
+    <div class="field"><label>Correo electrónico *</label><input class="input" id="reg-email" type="email" autocomplete="email" placeholder="tú@correo.com"></div>
+    <div style="display:flex;gap:10px"><div class="field" style="flex:1"><label>Contraseña *</label><input class="input" id="reg-pass" type="password" autocomplete="new-password" placeholder="Mín. 8"></div>
+      <div class="field" style="flex:1"><label>Confirmar *</label><input class="input" id="reg-pass2" type="password" autocomplete="new-password"></div></div>
+    <div class="field"><label>Nombre visible</label><input class="input" id="reg-name" placeholder="Opcional"></div>
+    <div style="display:flex;gap:10px"><div class="field" style="flex:1"><label>País / idioma</label><input class="input" id="reg-country" placeholder="Opcional"></div>
+      <div class="field" style="flex:1"><label>Fecha de nacimiento</label><input class="input" id="reg-birth" type="date"></div></div>
+    <label class="auth-check"><input type="checkbox" id="reg-terms"> Acepto los <a href="#" onclick="showTerms();return false">Términos</a> y la <a href="#" onclick="showPrivacy();return false">Política de Privacidad</a> *</label>
+    <button class="btn primary" style="width:100%;justify-content:center;margin-top:6px" onclick="doRegister()">Crear cuenta</button>
+    </div>
+    <p id="auth-status" class="auth-status"></p>`;
+  // login
+  return `
+    ${tabs}
+    <div class="field"><label>Correo o usuario</label><input class="input" id="auth-first" type="text" autocomplete="username" placeholder="tú@correo.com" onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()"></div>
+    <div class="field"><label>Contraseña</label><input class="input" id="login-pass" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <div style="text-align:right;margin:-6px 0 12px"><a style="font-size:12px;color:rgba(255,255,255,.85);text-decoration:underline;cursor:pointer" onclick="authSwitch('forgot')">¿Olvidaste tu contraseña?</a></div>
+    <button class="btn primary" style="width:100%;justify-content:center" onclick="doLogin()">Entrar</button>
+    <div class="auth-or"><span>o</span></div>
+    <button class="btn" style="width:100%;justify-content:center" onclick="magicLinkPrompt()">Enviar enlace mágico</button>
+    <p id="auth-status" class="auth-status"></p>`;
 }
+function doLogin(){
+  const id = document.getElementById('auth-first').value.trim();
+  const pass = document.getElementById('login-pass').value;
+  if (!id || !pass){ authStatus('Introduce tus credenciales.', '#e57373'); return; }
+  authStatus('Entrando…');
+  // Permite iniciar sesión con usuario: resuelve el correo desde profiles si no es un email.
+  const resolve = id.includes('@') ? Promise.resolve(id) : DB.client.from('profiles').select('id').eq('username', id).maybeSingle().then(()=>id);
+  resolve.then(email => DB.signInWithPassword(email, pass))
+    .then(()=>{ /* onAuthChange completará el arranque */ })
+    .catch(err=>{
+      const m = /Email not confirmed/i.test(err.message) ? 'Confirma tu correo antes de entrar (revisa tu bandeja).'
+        : /Invalid login/i.test(err.message) ? 'Correo o contraseña incorrectos.' : err.message;
+      authStatus(m, '#e57373');
+    });
+}
+async function doRegister(){
+  const username = document.getElementById('auth-first').value.trim().replace(/\s+/g,'_');
+  const email = document.getElementById('reg-email').value.trim();
+  const pass = document.getElementById('reg-pass').value;
+  const pass2 = document.getElementById('reg-pass2').value;
+  const name = document.getElementById('reg-name').value.trim();
+  const country = document.getElementById('reg-country').value.trim();
+  const birth = document.getElementById('reg-birth').value;
+  const terms = document.getElementById('reg-terms').checked;
+  if (!/^[a-z0-9_.]{3,20}$/i.test(username)){ authStatus('Usuario: 3-20 letras, números, . o _', '#e57373'); return; }
+  if (!email.includes('@')){ authStatus('Escribe un correo válido.', '#e57373'); return; }
+  if (pass.length < 8){ authStatus('La contraseña debe tener al menos 8 caracteres.', '#e57373'); return; }
+  if (pass !== pass2){ authStatus('Las contraseñas no coinciden.', '#e57373'); return; }
+  if (!terms){ authStatus('Debes aceptar los términos y la política.', '#e57373'); return; }
+  authStatus('Comprobando usuario…');
+  if (await DB.usernameTaken(username)){ authStatus('Ese nombre de usuario ya está en uso.', '#e57373'); return; }
+  authStatus('Creando tu cuenta…');
+  try{
+    // Guarda datos de perfil pendientes para aplicarlos tras confirmar el correo.
+    store.set('pendingProfile', { username, name: name || username, country, birthdate: birth });
+    const data = await DB.signUp({ email, password: pass, username, displayName: name, birthdate: birth, country });
+    if (data.session){ /* sin confirmación: onAuthChange arranca la app */ }
+    else { window._authSentMsg = `Enviamos un correo de verificación a ${email}. Confírmalo para activar tu cuenta.`; window._authResendEmail = email; authSwitch('sent'); }
+  }catch(err){
+    authStatus(/registered/i.test(err.message)?'Ese correo ya tiene una cuenta.':err.message, '#e57373');
+  }
+}
+function doForgot(){
+  const email = document.getElementById('auth-first').value.trim();
+  if (!email.includes('@')){ authStatus('Escribe un correo válido.', '#e57373'); return; }
+  authStatus('Enviando…');
+  DB.resetPassword(email).then(()=>{ window._authSentMsg = `Si existe una cuenta con ${email}, recibirás un enlace para restablecer tu contraseña.`; authSwitch('sent'); })
+    .catch(err=>authStatus(err.message, '#e57373'));
+}
+function doRecovery(){
+  const p1 = document.getElementById('auth-first').value, p2 = document.getElementById('rec-pass2').value;
+  if (p1.length < 8){ authStatus('Mínimo 8 caracteres.', '#e57373'); return; }
+  if (p1 !== p2){ authStatus('Las contraseñas no coinciden.', '#e57373'); return; }
+  authStatus('Guardando…');
+  DB.updatePassword(p1).then(()=>{ toast('Contraseña actualizada','check'); location.hash=''; location.reload(); })
+    .catch(err=>authStatus(err.message, '#e57373'));
+}
+function resendConfirm(){
+  const email = window._authResendEmail; if (!email){ return; }
+  DB.resendConfirmation(email).then(()=>toast('Correo reenviado','check')).catch(err=>toast(err.message,'x'));
+}
+function magicLinkPrompt(){
+  const id = document.getElementById('auth-first').value.trim();
+  if (!id.includes('@')){ authStatus('Escribe tu correo para el enlace mágico.', '#e57373'); return; }
+  authStatus('Enviando enlace…');
+  DB.signInWithEmail(id).then(()=>{ window._authSentMsg = `Enlace mágico enviado a ${id}.`; authSwitch('sent'); }).catch(err=>authStatus(err.message,'#e57373'));
+}
+function showTerms(){ openModal(`<div class="modal-h"><h3>Términos del servicio</h3><button class="modal-x" onclick="closeModal()">${I.x}</button></div><div class="modal-b" style="font-size:13px;color:var(--text2);line-height:1.6"><p>Focal es una herramienta de lectura. Usas el servicio bajo tu responsabilidad. No garantizamos disponibilidad ininterrumpida. Puedes exportar y eliminar tus datos en cualquier momento desde Ajustes. Tus documentos se procesan en tu navegador y se guardan cifrados en tu cuenta.</p></div>`); }
+function showPrivacy(){ openModal(`<div class="modal-h"><h3>Política de privacidad</h3><button class="modal-x" onclick="closeModal()">${I.x}</button></div><div class="modal-b" style="font-size:13px;color:var(--text2);line-height:1.6"><p>Guardamos únicamente los datos necesarios para tu cuenta: correo, perfil, biblioteca, notas, estadísticas y ajustes. No vendemos tus datos ni usamos telemetría de terceros. Puedes solicitar la eliminación completa de tu cuenta cuando quieras.</p></div>`); }
 async function loadUserData(){
   const [docs, notes, vocab, sessions, goals, settings, achieved] = await Promise.all([
     DB.loadLibrary(), DB.loadNotes(), DB.loadVocabulary(), DB.loadSessions(), DB.loadGoals(), DB.loadSettings(), DB.loadAchievements(),
@@ -2694,6 +2839,18 @@ async function loadUserData(){
       avatar: (prof && prof.avatar_url) || S.account.avatar,
       country: (prof && prof.country) || S.account.country,
     });
+    // Aplica el perfil pendiente de un registro reciente (nombre, país, fecha nac.).
+    const pending = store.get('pendingProfile', null);
+    if (pending){
+      S.account = Object.assign({}, S.account, {
+        username: S.account.username || pending.username,
+        name: pending.name || S.account.name,
+        country: pending.country || S.account.country,
+        birthdate: pending.birthdate || S.account.birthdate,
+      });
+      try{ await DB.saveProfile(S.account); }catch(e){ console.error(e); }
+      store.remove('pendingProfile');
+    }
     store.set('account', S.account);
   }catch(e){ console.error(e); }
   window._unlockedAchievements = achieved;
@@ -2722,12 +2879,22 @@ async function bootFocal(){
     // Sin Supabase configurado: modo demo local (localStorage), como antes.
     mergeLocalImports(); hydrateLocal(); applyPrefs(); applyTheme(S.theme); render(); return;
   }
+  // Enlace de recuperación de contraseña: muestra el formulario de nueva contraseña.
+  const isRecovery = /type=recovery/.test(location.hash) || /type=recovery/.test(location.search);
+  let recovering = isRecovery;
   const user = await DB.init();
-  if (!user){ renderLogin(); DB.onAuthChange(async (u)=>{ if (u){ DB.user = u; await bootAuthed(); } }); return; }
+  DB.onAuthChange(async (u, event)=>{
+    if (event === 'PASSWORD_RECOVERY'){ recovering = true; DB.user = u; renderLogin({ mode:'recovery' }); return; }
+    if (event === 'SIGNED_OUT'){ location.reload(); return; }
+    if (u && !recovering && !DB._booted){ DB.user = u; await bootAuthed(); }
+  });
+  if (isRecovery){ DB.user = user; renderLogin({ mode:'recovery' }); return; }
+  if (!user){ renderLogin({ mode:'login' }); return; }
   DB.user = user; await bootAuthed();
-  DB.onAuthChange((u)=>{ if (!u) location.reload(); });
 }
 async function bootAuthed(){
+  if (DB._booted) return;
+  DB._booted = true;
   try{
     await DB.seedIfEmpty();
     await loadUserData();

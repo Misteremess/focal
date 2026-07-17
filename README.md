@@ -4,8 +4,28 @@ App web de lectura rápida (RSVP) + lector tradicional, con biblioteca, notas,
 vocabulario, estadísticas y ajustes, personalizada por cuenta de usuario.
 
 Stack: **HTML/CSS/JS puro (sin build ni framework) + Supabase** (auth por
-enlace mágico + Postgres con RLS). No hay paso de compilación: es un sitio
-estático que Vercel sirve tal cual.
+**usuario y contraseña** con verificación de correo y recuperación, sobre
+Postgres con RLS). No hay paso de compilación: es un sitio estático que Vercel
+sirve tal cual.
+
+### Arquitectura de ficheros
+
+Carga controlada por orden de `<script>` en `index.html`, cada capa con una
+responsabilidad clara y sin dependencias circulares:
+
+| Fichero | Responsabilidad |
+|---------|-----------------|
+| `config.js`  | Credenciales públicas de Supabase (URL + anon key). |
+| `db.js`      | Capa de datos/auth: única frontera con Supabase (auth, CRUD, RLS). |
+| `data.js`    | Datos de demostración y catálogo de temas/logros. |
+| `import.js`  | Extracción de texto en el navegador (PDF/EPUB/DOCX/…). |
+| `app.js`     | UI, router por hash, motor RSVP, lector, estado (`S`) y vistas. |
+| `app.css`    | Sistema de diseño con variables de tema. |
+| `supabase/migrations/*` | Esquema, seed, RLS e índices, versionados y ordenados. |
+
+Todo acceso al backend pasa por `DB.*` (en `db.js`): eso mantiene la lógica de
+seguridad y persistencia en un solo sitio y facilita escalar o migrar el
+backend sin tocar la UI.
 
 ---
 
@@ -25,16 +45,31 @@ python3 -m http.server 4173
 1. Crea un proyecto nuevo en [supabase.com](https://supabase.com) (gratis).
    Usa uno **separado** del de otros proyectos personales (TurnOff, etc.):
    así una cuota o un fallo no afecta a los demás.
-2. **SQL Editor** → pega y ejecuta, en este orden:
-   - [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql) — tablas y RLS.
-   - [`supabase/migrations/0002_seed.sql`](supabase/migrations/0002_seed.sql) — catálogo de documentos de demostración (visibles para todas las cuentas).
-3. **Authentication → Providers → Email**: dejar activado "Enable email
-   provider" y activar **"Enable Email OTP" / magic link** (viene activado
-   por defecto). No hace falta configurar OAuth de terceros.
+2. **SQL Editor** → pega y ejecuta, **en este orden**:
+   - [`0001_init.sql`](supabase/migrations/0001_init.sql) — tablas y RLS.
+   - [`0002_seed.sql`](supabase/migrations/0002_seed.sql) — catálogo de demostración.
+   - [`0003_single_demo.sql`](supabase/migrations/0003_single_demo.sql) — deja **un solo** libro demo (Hábitos atómicos).
+   - [`0004_profile_fields.sql`](supabase/migrations/0004_profile_fields.sql) — campos de perfil (username, bio, avatar, país…).
+   - [`0005_signup_profile.sql`](supabase/migrations/0005_signup_profile.sql) — rellena el perfil al registrarse.
+   - [`0006_scaling_indexes.sql`](supabase/migrations/0006_scaling_indexes.sql) — índices para escalar a muchos usuarios.
+3. **Authentication → Providers → Email**: activa "Enable email provider" y
+   **"Confirm email"** (para exigir verificación de correo en el alta). El
+   proveedor de contraseña queda activo; el enlace mágico se conserva como
+   alternativa opcional.
 4. **Authentication → URL Configuration**:
    - *Site URL*: `https://focal.maximoduperez.com`
-   - *Redirect URLs*: añade también `http://localhost:4173` (para probar en local).
-5. **Project Settings → API** → copia `Project URL` y `anon public key` y
+   - *Redirect URLs*: añade también `http://localhost:4173` (local) y la URL de
+     producción. El enlace de **recuperación de contraseña** vuelve a la app con
+     `type=recovery` y muestra el formulario de nueva contraseña.
+5. **Correos con coherencia visual (evitar spam)**:
+   - **Authentication → Email Templates**: personaliza *Confirm signup* y *Reset
+     password* con el nombre y color de Focal (acento `#b3382c`) y un remitente
+     reconocible. Un correo con marca coherente reduce el riesgo de spam.
+   - Si los correos nativos de Supabase acaban en spam, configura **SMTP propio
+     con [Resend](https://resend.com)** en *Project Settings → Auth → SMTP*
+     (dominio verificado con SPF/DKIM). El código de la app no cambia: Supabase
+     sigue enviando, solo cambia el transporte.
+6. **Project Settings → API** → copia `Project URL` y `anon public key` y
    rellena [`config.js`](config.js):
    ```js
    const CONFIG = {
@@ -44,8 +79,8 @@ python3 -m http.server 4173
    ```
    La `anon key` está pensada para ser pública (la seguridad la da RLS, no el
    secreto de la key) — es seguro hacer commit de `config.js` con estos valores.
-6. Haz commit y push. Con el autodeploy de Vercel activo, en ~1 minuto
-   `focal.maximoduperez.com` ya pide el enlace mágico y guarda todo por cuenta.
+7. Haz commit y push. Con el autodeploy de Vercel activo, en ~1 minuto
+   `focal.maximoduperez.com` ya pide usuario y contraseña y guarda todo por cuenta.
 
 ## 3. Despliegue: Vercel + subdominio (mismo patrón que TurnOff)
 
