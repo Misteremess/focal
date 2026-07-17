@@ -159,7 +159,7 @@ DB.seedIfEmpty = async function () {
 };
 
 /* ---------- utilidades de fecha ---------- */
-function fmtDate(iso) { if (!iso) return ''; const d = new Date(iso); return d.toLocaleDateString('es-ES', { day:'numeric', month:'short', year:'numeric' }); }
+function fmtDate(iso) { if (!iso) return ''; const d = new Date(iso); return d.toLocaleDateString((typeof S !== 'undefined' && S.locale) || 'es-ES', { day:'numeric', month:'short', year:'numeric' }); }
 function relDate(iso) {
   const diff = Date.now() - new Date(iso).getTime();
   const m = Math.floor(diff/60000), h = Math.floor(diff/3600000), d = Math.floor(diff/86400000);

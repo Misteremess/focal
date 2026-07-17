@@ -452,3 +452,44 @@ select.input{appearance:none;background-image:linear-gradient(45deg,transparent 
   .session-row{grid-template-columns:1fr 90px 70px}
   .session-row div:nth-child(n+4){display:none}
 }
+
+/* ===== Añadidos: interacciones reales ===== */
+/* Popover de selección de texto (destacar / nota) */
+.sel-pop{position:fixed;z-index:80;display:none;gap:6px;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:22px;padding:6px 9px;box-shadow:0 8px 28px var(--shadow)}
+.sel-pop.show{display:flex}
+.sel-pop button{width:22px;height:22px;border-radius:50%;border:1.5px solid color-mix(in srgb,var(--text) 12%,transparent);transition:transform .12s var(--spring)}
+.sel-pop button:hover{transform:scale(1.15)}
+.sel-pop .sp-note{background:var(--surface2);color:var(--text2);display:flex;align-items:center;justify-content:center}
+
+/* Destacados dentro del lector */
+mark.hl{background:color-mix(in srgb,var(--hl,#e8b04b) 32%,transparent);color:inherit;border-radius:3px;padding:0 1px;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+mark.find{background:color-mix(in srgb,var(--accent) 35%,transparent);color:inherit;border-radius:3px;padding:0 1px}
+
+/* Modo enfoque del lector */
+.reader.focus-mode p[data-pi]{opacity:.32;transition:opacity .25s var(--ease)}
+.reader.focus-mode p[data-pi].focus-on{opacity:1}
+
+/* Píldora del temporizador Pomodoro */
+.pomo-pill{position:fixed;bottom:22px;right:22px;z-index:70;display:flex;gap:9px;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:26px;padding:8px 10px 8px 15px;box-shadow:0 10px 30px var(--shadow);font-size:12.5px}
+.pomo-pill b{font-size:14px;min-width:44px;text-align:center}
+.pomo-pill span{color:var(--text3);font-size:11px}
+
+/* Accesibilidad */
+html.a11y-contrast{--text2:var(--text)}
+html.a11y-contrast .card,html.a11y-contrast .btn,html.a11y-contrast .input{border-color:color-mix(in srgb,var(--text) 45%,var(--border))}
+html.a11y-big .btn,html.a11y-big .tb-icon,html.a11y-big .rb-btn{padding:11px 16px;min-width:44px;min-height:44px}
+html.a11y-dyslexia body{letter-spacing:.04em;word-spacing:.12em}
+html{letter-spacing:var(--a11y-ls,0)}
+html.reduce-transp .card,html.reduce-transp .modal,html.reduce-transp .sidebar{backdrop-filter:none!important;opacity:1!important}
+
+/* Reducción de movimiento: preferencia del sistema o ajuste manual */
+html.a11y-motion *,html.a11y-motion *::before,html.a11y-motion *::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
+}
+
+/* Foco visible por teclado */
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+
+/* En rutas inmersivas (lector, RSVP, estudio) las barras del shell no deben solaparse */
+#app.immersive .topbar,#app.immersive .bottomnav{display:none}

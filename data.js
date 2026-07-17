@@ -31,12 +31,46 @@ let DEMO_NOTES = [
 ];
 
 let DEMO_VOCAB = [
-  { word:'contrapunto', def:'Concurrencia de dos o más voces o líneas melódicas independientes; contraste entre dos elementos simultáneos.', doc:'El nombre del viento', date:'9 jul 2026', level:3 },
-  { word:'contrafactual', def:'Relativo a lo que no ha sucedido pero podría haber sucedido; condición hipotética contraria a los hechos.', doc:'Razonamiento en modelos…', date:'12 jul 2026', level:2 },
-  { word:'amortizado', def:'En análisis de algoritmos, coste medio por operación considerando una secuencia completa de operaciones.', doc:'Apuntes — Estructuras de datos', date:'6 jul 2026', level:4 },
-  { word:'directriz', def:'Que dirige o encamina. En Marco Aurelio, la parte rectora del alma (hegemonikón).', doc:'Meditaciones', date:'11 jul 2026', level:1 },
-  { word:'elasticidad', def:'Sensibilidad de la demanda ante variaciones del precio.', doc:'Informe Q3 2025', date:'20 jun 2026', level:5 },
+  { id:'v1', word:'contrapunto', def:'Concurrencia de dos o más voces o líneas melódicas independientes; contraste entre dos elementos simultáneos.', doc:'El nombre del viento', docId:'viento', date:'9 jul 2026', level:3 },
+  { id:'v2', word:'contrafactual', def:'Relativo a lo que no ha sucedido pero podría haber sucedido; condición hipotética contraria a los hechos.', doc:'Razonamiento en modelos…', docId:'paper_ia', date:'12 jul 2026', level:2 },
+  { id:'v3', word:'amortizado', def:'En análisis de algoritmos, coste medio por operación considerando una secuencia completa de operaciones.', doc:'Apuntes — Estructuras de datos', docId:'apuntes', date:'6 jul 2026', level:4 },
+  { id:'v4', word:'directriz', def:'Que dirige o encamina. En Marco Aurelio, la parte rectora del alma (hegemonikón).', doc:'Meditaciones', docId:'meditaciones', date:'11 jul 2026', level:1 },
+  { id:'v5', word:'elasticidad', def:'Sensibilidad de la demanda ante variaciones del precio.', doc:'Informe Q3 2025', docId:'informe', date:'20 jun 2026', level:5 },
 ];
+
+// Preguntas de comprensión preconfiguradas para los textos de demostración.
+// Para documentos importados no se generan preguntas automáticas: el usuario puede crearlas manualmente.
+const QUIZ = {
+  habitos: [
+    { q:'Según el texto, ¿qué son los hábitos?', opts:['El interés compuesto de la superación personal','Metas a corto plazo','Transformaciones únicas en la vida'], a:0 },
+    { q:'¿Qué determina el progreso según el autor?', opts:['Las metas','Los sistemas','La motivación'], a:1 },
+    { q:'«No te elevas al nivel de tus metas…»', opts:['…subes al nivel de tu esfuerzo','…caes al nivel de tus sistemas','…bajas al nivel de tus miedos'], a:1 },
+  ],
+  viento: [
+    { q:'¿De cuántas partes era el silencio de la posada?', opts:['Dos','Tres','Cuatro'], a:1 },
+    { q:'¿De qué color era el cabello del posadero?', opts:['Negro','Rubio','Rojo como el fuego'], a:2 },
+  ],
+  meditaciones: [
+    { q:'Según Marco Aurelio, hemos nacido para…', opts:['competir','colaborar','contemplar'], a:1 },
+    { q:'¿Qué debe dejar de ser esclava la parte directriz?', opts:['De los libros','De los hilos del deseo egoísta','Del destino'], a:1 },
+  ],
+  paper_ia: [
+    { q:'¿Cuántos problemas contiene el banco de pruebas?', opts:['1.200','4.200','11.000'], a:1 },
+    { q:'¿Qué mejora la descomposición de problemas?', opts:['La precisión media un 23,7 %','La velocidad de inferencia','El tamaño del modelo'], a:0 },
+  ],
+  apuntes: [
+    { q:'¿Qué estructura permite acceso aleatorio en tiempo constante?', opts:['Lista enlazada','Array','Árbol binario'], a:1 },
+    { q:'¿Qué factor de carga típico se menciona para tablas hash?', opts:['0,5','0,75','0,9'], a:1 },
+  ],
+  scifi: [
+    { q:'¿Cada cuánto se repetía la secuencia de números primos?', opts:['Cada once minutos','Cada hora','Cada tres segundos'], a:0 },
+    { q:'¿Cómo se llama la nave generacional?', opts:['Meridiano','Cormorán','Esperanza'], a:2 },
+  ],
+  informe: [
+    { q:'¿Cuánto crecieron los ingresos interanualmente?', opts:['9 %','14,3 %','22 %'], a:1 },
+    { q:'¿Qué canal genera ya el 46 % de las altas nuevas?', opts:['El canal de pago','El canal orgánico','Las ventas directas'], a:1 },
+  ],
+};
 
 let DEMO_SESSIONS = [
   { doc:'habitos', date:'Hoy, 09:12', mode:'RSVP', mins:24, words:9840, wpm:410, comp:92 },
@@ -46,11 +80,6 @@ let DEMO_SESSIONS = [
   { doc:'meditaciones', date:'11 jul, 23:05', mode:'RSVP', mins:21, words:7480, wpm:356, comp:90 },
   { doc:'apuntes', date:'6 jul, 17:40', mode:'Modo estudio', mins:45, words:8900, wpm:445, comp:96 },
   { doc:'scifi', date:'3 jul, 21:15', mode:'RSVP', mins:18, words:7230, wpm:402, comp:87 },
-];
-
-const WEEK_DATA = [ // minutos por día, esta semana
-  { d:'L', min:32, goal:30 }, { d:'M', min:41, goal:30 }, { d:'X', min:0, goal:30 },
-  { d:'J', min:28, goal:30 }, { d:'V', min:52, goal:30 }, { d:'S', min:24, goal:30 }, { d:'D', min:0, goal:30 },
 ];
 
 const THEMES = {
@@ -68,15 +97,16 @@ const THEMES = {
 // arreglo de errata en ocean
 THEMES.ocean.vars.text3 = '#5f7888';
 
+// El estado de desbloqueo se calcula en app.js con la actividad real y se persiste.
 const ACHIEVEMENTS = [
-  { name:'Primera sesión', desc:'Completa tu primera sesión RSVP', done:true, date:'4 ene 2026' },
-  { name:'10.000 palabras', desc:'Lee 10.000 palabras acumuladas', done:true, date:'9 ene 2026' },
-  { name:'100.000 palabras', desc:'Lee 100.000 palabras acumuladas', done:true, date:'2 mar 2026' },
-  { name:'Primera semana completa', desc:'Lee los 7 días de una semana', done:true, date:'15 feb 2026' },
-  { name:'500 ppm', desc:'Alcanza 500 palabras por minuto', done:true, date:'22 abr 2026' },
-  { name:'Un libro terminado', desc:'Termina tu primer documento largo', done:true, date:'8 abr 2026' },
-  { name:'Diez libros terminados', desc:'Termina diez documentos', done:false, progress:'3 / 10' },
-  { name:'Una hora sin distracciones', desc:'Sesión de 60 min en modo enfoque', done:false, progress:'45 min máx.' },
-  { name:'Comprensión > 90 %', desc:'Media semanal superior al 90 %', done:true, date:'6 jul 2026' },
-  { name:'Racha de 30 días', desc:'Lee 30 días consecutivos', done:false, progress:'12 / 30' },
+  { name:'Primera sesión', desc:'Completa tu primera sesión RSVP' },
+  { name:'10.000 palabras', desc:'Lee 10.000 palabras acumuladas' },
+  { name:'100.000 palabras', desc:'Lee 100.000 palabras acumuladas' },
+  { name:'Primera semana completa', desc:'Lee 7 días consecutivos' },
+  { name:'500 ppm', desc:'Alcanza 500 palabras por minuto' },
+  { name:'Un libro terminado', desc:'Termina tu primer documento largo' },
+  { name:'Diez libros terminados', desc:'Termina diez documentos' },
+  { name:'Una hora sin distracciones', desc:'Una sesión de 60 minutos' },
+  { name:'Comprensión > 90 %', desc:'Media superior al 90 % en las pruebas' },
+  { name:'Racha de 30 días', desc:'Lee 30 días consecutivos' },
 ];
