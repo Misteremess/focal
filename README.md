@@ -93,3 +93,21 @@ step — pero con RLS activo no es necesario.
 
 Ver [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql)
 para el esquema completo y las políticas de seguridad.
+
+## 5. Importación de documentos
+
+La importación (`import.js`) extrae texto real en el propio navegador, sin
+servidor intermedio:
+
+- **PDF** — [pdf.js](https://mozilla.github.io/pdf.js/) (cargado bajo demanda desde CDN).
+- **EPUB** — descomprimido con [JSZip](https://stuk.github.io/jszip/), lee el
+  `container.xml` / `.opf` y concatena el `spine` en orden.
+- **DOCX** — descomprimido con JSZip, texto extraído de `word/document.xml`.
+- **TXT / MD / HTML** — lectura directa (Markdown/HTML se limpian de marcado).
+- **Desde URL** — `fetch` + extracción de texto; sujeto a CORS del sitio origen.
+- **Pegar texto / portapapeles** — creación inmediata de documento.
+
+Con sesión iniciada, el documento se guarda en `documents` (con
+`owner_id` = tu usuario) y en `progress`. Sin backend configurado, se
+guarda en `localStorage` bajo la clave `focal.localImports` y se fusiona
+con el catálogo de demo al arrancar.

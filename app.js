@@ -1046,36 +1046,37 @@ function openImport(){
       <div class="imp-tabs">
         ${['Archivos','Desde URL','Pegar texto','Portapapeles'].map((t,i)=>`<button class="${i===0?'on':''}" onclick="segSel(this);impTab(${i})">${t}</button>`).join('')}
       </div>
-      <div id="imp-body">
-        <div class="dropzone" id="dz" onclick="simulateImport()" ondragover="event.preventDefault();this.classList.add('over')" ondragleave="this.classList.remove('over')" ondrop="event.preventDefault();this.classList.remove('over');simulateImport()">
-          <div class="dz-ico">${I.upload}</div>
-          <b style="font-size:14px">Arrastra tus archivos aquí</b>
-          <p style="font-size:12.5px;color:var(--text3);margin-top:5px">o haz clic para seleccionarlos · varios a la vez</p>
-          <div class="fmt-row">${['PDF','EPUB','TXT','HTML','MD','DOCX'].map(f=>`<span class="ftype">${f}</span>`).join('')}</div>
-        </div>
-        <div id="imp-queue"></div>
-        <div class="setrow" style="margin-top:14px"><div><div class="sr-t">OCR para PDF escaneado</div><div class="sr-d">Reconoce texto en documentos digitalizados.</div></div><button class="toggle" onclick="this.classList.toggle('on')"></button></div>
-        <div class="setrow"><div><div class="sr-t">Idioma del documento</div></div><select class="input" style="width:170px"><option>Detectar automáticamente</option><option>Español</option><option>Inglés</option></select></div>
-      </div>
+      <div id="imp-body">${impPanelFiles()}</div>
     </div>`);
 }
-function impTab(i){
-  const b = document.getElementById('imp-body').firstElementChild;
-  if (i===1) b.outerHTML = `<div id="dz"><div class="field"><label>Dirección URL</label><input class="input" placeholder="https://ejemplo.com/articulo"></div><button class="btn primary" style="width:100%;justify-content:center" onclick="simulateImport()">Importar artículo</button></div>`;
-  else if (i===2) b.outerHTML = `<div id="dz"><textarea class="input" style="height:140px;resize:none" placeholder="Pega aquí cualquier texto…"></textarea><button class="btn primary" style="width:100%;justify-content:center;margin-top:10px" onclick="simulateImport()">Crear documento</button></div>`;
-  else if (i===3) b.outerHTML = `<div id="dz" class="dropzone" onclick="simulateImport()"><div class="dz-ico">${I.doc}</div><b style="font-size:14px">Importar desde el portapapeles</b><p style="font-size:12.5px;color:var(--text3);margin-top:5px">Se detectó texto copiado hace 2 min · 1.240 palabras</p></div>`;
-  else { closeModal(); openImport(); }
+function impPanelFiles(){
+  return `<div id="dz">
+      <div class="dropzone" id="dz-drop" onclick="document.getElementById('imp-file-input').click()"
+        ondragover="event.preventDefault();this.classList.add('over')" ondragleave="this.classList.remove('over')"
+        ondrop="event.preventDefault();this.classList.remove('over');importFiles(event.dataTransfer.files)">
+        <input type="file" id="imp-file-input" multiple accept=".pdf,.epub,.txt,.md,.markdown,.html,.htm,.docx" style="display:none" onchange="importFiles(this.files)">
+        <div class="dz-ico">${I.upload}</div>
+        <b style="font-size:14px">Arrastra tus archivos aquí</b>
+        <p style="font-size:12.5px;color:var(--text3);margin-top:5px">o haz clic para seleccionarlos · varios a la vez</p>
+        <div class="fmt-row">${['PDF','EPUB','TXT','HTML','MD','DOCX'].map(f=>`<span class="ftype">${f}</span>`).join('')}</div>
+      </div>
+      <div id="imp-queue"></div>
+      <p style="font-size:11px;color:var(--text3);margin-top:14px">El texto se extrae en tu propio navegador — nada se sube a ningún servidor salvo tu propia cuenta de Focal.</p>
+    </div>`;
 }
-function simulateImport(){
-  const q = document.getElementById('imp-queue'); if (!q) return;
-  q.innerHTML = `<div class="imp-file"><div class="fi">PDF</div>
-    <div style="flex:1;min-width:0"><b style="font-size:13px">arquitectura-de-software.pdf</b>
-    <div style="font-size:11px;color:var(--text3)" id="imp-status">Extrayendo texto y portada…</div>
-    <div class="imp-prog"><i></i></div></div>
-    <span class="mono" style="font-size:10.5px;color:var(--text3)">4,2 MB</span></div>`;
-  setTimeout(()=>{ const s=document.getElementById('imp-status'); if(s) s.textContent='Detectando título, autor e idioma…'; }, 1200);
-  setTimeout(()=>{ const s=document.getElementById('imp-status'); if(s){ s.textContent='Listo · «Arquitectura de software» · Español · 214 páginas'; s.previousElementSibling?.remove(); s.parentElement.querySelector('.imp-prog')?.remove(); } }, 2400);
-  setTimeout(()=>{ closeModal(); toast('Documento importado a tu biblioteca','check'); }, 3300);
+function impTab(i){
+  const b = document.getElementById('imp-body');
+  if (i===0) b.innerHTML = impPanelFiles();
+  else if (i===1) b.innerHTML = `<div id="dz"><div class="field"><label>Dirección URL</label><input class="input" id="imp-url" placeholder="https://ejemplo.com/articulo" onkeydown="if(event.key==='Enter')importFromUrl(document.getElementById('imp-url').value.trim())"></div><button class="btn primary" style="width:100%;justify-content:center" onclick="importFromUrl(document.getElementById('imp-url').value.trim())">Importar artículo</button><div id="imp-queue"></div><p style="font-size:11px;color:var(--text3);margin-top:10px">Algunos sitios bloquean la lectura entre dominios (CORS); si falla, usa «Pegar texto».</p></div>`;
+  else if (i===2) b.innerHTML = `<div id="dz"><textarea class="input" id="imp-paste" style="height:140px;resize:none" placeholder="Pega aquí cualquier texto…"></textarea><button class="btn primary" style="width:100%;justify-content:center;margin-top:10px" onclick="importPastedText(document.getElementById('imp-paste').value)">Crear documento</button></div>`;
+  else if (i===3) b.innerHTML = `<div id="dz"><div class="dropzone" id="clip-drop" onclick="importFromClipboard()"><div class="dz-ico">${I.doc}</div><b style="font-size:14px">Importar desde el portapapeles</b><p style="font-size:12.5px;color:var(--text3);margin-top:5px">Copia un texto y pulsa aquí para crear el documento</p></div><div id="imp-queue"></div></div>`;
+}
+async function importFromClipboard(){
+  try{
+    const text = await navigator.clipboard.readText();
+    if (!text || countWords(text) < 5){ toast('El portapapeles no tiene suficiente texto','x'); return; }
+    await importPastedText(text);
+  }catch(err){ toast('No se pudo leer el portapapeles: permiso denegado','x'); }
 }
 
 /* ---------- Command palette ---------- */
@@ -1304,10 +1305,23 @@ async function loadUserData(){
   if (settings){ S.theme = settings.theme || S.theme; S.custom = settings.custom || S.custom; Object.assign(S.rsvp, settings.rsvp||{}); Object.assign(S.reader, settings.reader||{}); }
   window._unlockedAchievements = achieved;
 }
+function mergeLocalImports(){
+  const local = store.get('localImports', []);
+  for (const d of local){
+    if (DEMO_DOCS.some(x => x.id === d.id)) continue;
+    DEMO_DOCS.unshift({
+      id: d.id, title: d.title, author: d.author, type: d.type, pages: Math.max(1, Math.round(countWords(d.text)/280)),
+      words: countWords(d.text), progress: 0, chapter: 'Principio del documento', timeLeft: estimateReadTime(countWords(d.text),300),
+      lastRead: 'Nunca', avgWpm: 0, tags: ['Importado'], fav: false, cover: d.cover, collection: 'Importados',
+      added: new Date(d.addedAt).toLocaleDateString('es-ES', { day:'numeric', month:'short', year:'numeric' }), readTime:'0 min', sessions:0, done:false,
+    });
+    DEMO_TEXTS[d.id] = d.text;
+  }
+}
 async function bootFocal(){
   if (!DB.configured()){
     // Sin Supabase configurado: modo demo local (localStorage), como antes.
-    applyTheme(S.theme); render(); return;
+    mergeLocalImports(); applyTheme(S.theme); render(); return;
   }
   const user = await DB.init();
   if (!user){ renderLogin(); DB.onAuthChange(async (u)=>{ if (u){ DB.user = u; await bootAuthed(); } }); return; }
