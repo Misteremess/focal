@@ -67,8 +67,10 @@ const S = {
   setTab: 'apariencia',
   goals: store.get('goals', { minDay:30, wordsDay:8000, wpmTarget:500 }),
 };
-function saveRsvp(){ store.set('rsvp', S.rsvp); }
+function saveRsvp(){ store.set('rsvp', S.rsvp); if (DB.user) DB.saveSettings({rsvp:S.rsvp}).catch(console.error); }
+function saveReader(){ store.set('reader', S.reader); if (DB.user) DB.saveSettings({reader:S.reader}).catch(console.error); }
 const docById = id => DEMO_DOCS.find(d => d.id===id);
+const docText = id => (DB.user ? DEMO_TEXTS_LIVE[id] : DEMO_TEXTS[id]) || DEMO_TEXTS[id] || '';
 const fmtWords = n => n>=1000 ? (n/1000).toFixed(n>=100000?0:1).replace('.',',')+' k' : n;
 
 /* ---------- Temas ---------- */
@@ -80,6 +82,7 @@ function applyTheme(key){
   r.setProperty('--rsvp-font', t.mono ? 'var(--mono)' : (S.rsvp.font==='sans'?'var(--sans)':S.rsvp.font==='mono'?'var(--mono)':'var(--serif)'));
   document.querySelectorAll('.theme-quick button').forEach(b=>b.classList.toggle('on', b.dataset.t===key));
   document.querySelectorAll('.theme-card').forEach(c=>c.classList.toggle('on', c.dataset.t===key));
+  if (DB.user) DB.saveSettings({theme:key}).catch(console.error);
 }
 
 /* ---------- Toast ---------- */
@@ -276,7 +279,7 @@ function docCard(d){
       <div class="dc-hover">
         <button title="Leer" onclick="event.stopPropagation();go('lector/${d.id}')">${I.book}</button>
         <button title="Abrir en RSVP" onclick="event.stopPropagation();go('rsvp/${d.id}')">${I.zap}</button>
-        <button title="Favorito" onclick="event.stopPropagation();toast('${d.fav?'Quitado de':'Añadido a'} favoritos','star')">${I.star}</button>
+        <button title="Favorito" onclick="event.stopPropagation();toggleFav('${d.id}')">${I.star}</button>
       </div>
     </div>
     <div class="dc-meta" onclick="go('documento/${d.id}')">
@@ -284,6 +287,31 @@ function docCard(d){
       <div class="dc-foot"><span class="ftype">${d.type}</span><div class="pbar"><i style="width:${d.progress*100}%"></i></div><span>${Math.round(d.progress*100)} %</span></div>
     </div>
   </div>`;
+}
+function persistSession(doc, mins, words, comp){
+  const totalWords = docText(doc.id).split(/\s+/).filter(Boolean).length || doc.words;
+  const newProgress = Math.min(1, RSVP.i / (totalWords || 1));
+  doc.progress = Math.max(doc.progress, newProgress);
+  doc.avgWpm = Math.round((doc.avgWpm + S.rsvp.wpm) / 2) || S.rsvp.wpm;
+  doc.sessions = (doc.sessions||0) + 1;
+  doc.lastRead = 'Hace un momento';
+  doc.done = doc.progress >= .995;
+  const modeLabel = location.hash.includes('estudio') ? 'Modo estudio' : 'RSVP';
+  DEMO_SESSIONS.unshift({ doc: doc.id, date: 'Ahora mismo', mode: modeLabel, mins, words, wpm: S.rsvp.wpm, comp });
+  if (DB.user){
+    DB.addSession({ docId: doc.id, mode: modeLabel, mins, words, wpm: S.rsvp.wpm, comprehension: comp }).catch(console.error);
+    DB.upsertProgress(doc.id, {
+      progress: doc.progress, avg_wpm: doc.avgWpm, sessions: doc.sessions, done: doc.done,
+      last_read: new Date().toISOString(),
+    }).catch(console.error);
+  }
+}
+function toggleFav(id){
+  const d = docById(id); if (!d) return;
+  d.fav = !d.fav;
+  if (DB.user) DB.toggleFavorite(id, d.fav).catch(console.error);
+  toast(d.fav ? 'Añadido a favoritos' : 'Quitado de favoritos', 'star');
+  render();
 }
 function emptyState(icon,title,text,cta,action){
   return `<div class="empty"><div class="e-glyph">${I[icon]||I.doc}</div><h3>${title}</h3><p>${text}</p>${cta?`<button class="btn primary" onclick="${action}">${cta}</button>`:''}</div>`;
@@ -430,9 +458,9 @@ views.historial = () => `<div class="page"><h1 class="page-title">Historial de s
 views.perfil = () => `<div class="page" style="max-width:720px">
   <h1 class="page-title">Perfil</h1><p class="page-sub">Cuenta, dispositivos y sincronización.</p>
   <div class="card panel" style="display:flex;gap:18px;align-items:center;margin-bottom:18px">
-    <div class="avatar" style="width:56px;height:56px;font-size:19px">MD</div>
-    <div style="flex:1"><b style="font-size:16px">Máximo Duperez</b><div style="font-size:13px;color:var(--text3)">maximoduperez@gmail.com</div></div>
-    <span class="chip" style="background:color-mix(in srgb,var(--accent) 12%,var(--surface2));color:var(--accent);font-weight:600">Plan Pro</span>
+    <div class="avatar" style="width:56px;height:56px;font-size:19px">${(DB.user?.email||'MD').slice(0,2).toUpperCase()}</div>
+    <div style="flex:1"><b style="font-size:16px">${DB.user ? (DB.user.email.split('@')[0]) : 'Máximo Duperez'}</b><div style="font-size:13px;color:var(--text3)">${DB.user?.email || 'maximoduperez@gmail.com'}${DB.user?'':' · modo demo sin conexión'}</div></div>
+    ${DB.user ? `<button class="btn sm" onclick="DB.signOut().then(()=>location.reload())">Cerrar sesión</button>` : `<span class="chip" style="background:color-mix(in srgb,var(--accent) 12%,var(--surface2));color:var(--accent);font-weight:600">Plan Pro</span>`}
   </div>
   <div class="card panel" style="margin-bottom:18px"><h3>Dispositivos y sincronización</h3>
     ${[['MacBook Pro de Máximo','Este dispositivo · Activo ahora',true],['iPhone 15','Última sincronización hace 20 min',false],['iPad Air','Última sincronización ayer',false]].map(d=>`
@@ -625,7 +653,7 @@ views.documento = (id) => {
 /* ---------- Lector tradicional ---------- */
 views.lector = (id) => {
   const d = docById(id) || DEMO_DOCS[0];
-  const text = DEMO_TEXTS[d.id] || DEMO_TEXTS.habitos;
+  const text = docText(d.id) || DEMO_TEXTS.habitos;
   const paras = text.split(/(?<=\.)\s+(?=[A-ZÁÉÍÓÚ¿L])/g).reduce((acc,s)=>{ // agrupar frases en párrafos
     if (!acc.length || acc[acc.length-1].split(' ').length > 70) acc.push(s); else acc[acc.length-1]+=' '+s; return acc; },[]);
   setTimeout(initReader, 30);
@@ -709,7 +737,7 @@ function wordDelay(w){
 }
 views.rsvp = (id) => {
   const d = docById(id) || DEMO_DOCS[0];
-  RSVP.doc = d; RSVP.words = tokenize(DEMO_TEXTS[d.id] || DEMO_TEXTS.habitos);
+  RSVP.doc = d; RSVP.words = tokenize(docText(d.id) || DEMO_TEXTS.habitos);
   RSVP.i = Math.floor(RSVP.words.length * .1); RSVP.playing=false;
   RSVP.startedAt = Date.now(); RSVP.wordsRead=0; RSVP.maxWpm=S.rsvp.wpm; RSVP.pauses=0; RSVP.rewinds=0;
   setTimeout(()=>{ showWord(false); bindRsvp(); }, 40);
@@ -745,8 +773,8 @@ views.rsvp = (id) => {
         ${[1,2,3,4,5].map(n=>`<option value="${n}" ${S.rsvp.chunk===n?'selected':''}>${n} pal</option>`).join('')}
       </select>
       <span class="rb-sep"></span>
-      <button class="rb-btn" title="Marcador (M)" onclick="toast('Marcador guardado: palabra, velocidad y tema','bookmark')">${I.bookmark}</button>
-      <button class="rb-btn" title="Nota rápida (N)" onclick="toast('Nota rápida creada','note')">${I.note}</button>
+      <button class="rb-btn" title="Marcador (M)" onclick="quickBookmark()">${I.bookmark}</button>
+      <button class="rb-btn" title="Nota rápida (N)" onclick="quickNote()">${I.note}</button>
       <button class="rb-btn" title="Temporizador" onclick="openPomodoro()">${I.timer}</button>
       <button class="rb-btn" title="Terminar sesión" onclick="endSession()">${I.check}</button>
     </div>
@@ -898,6 +926,28 @@ function bindRsvp(){
 }
 function rsvpExit(){ clearTimeout(RSVP.timer); RSVP.playing=false; go('documento/'+RSVP.doc.id); }
 function toggleFS(){ if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(()=>{}); }
+function saveVocabWord(word){
+  const definition = `Acción y efecto relacionados con «${word.toLowerCase()}». Definición obtenida del diccionario integrado.`;
+  const docId = RSVP.doc?.id || null;
+  DEMO_VOCAB.unshift({ word, def: definition, doc: docId ? docById(docId)?.title : '—', date: 'Ahora mismo', level: 1 });
+  if (DB.user) DB.addVocabWord({ word, definition, docId, level:1 }).catch(console.error);
+  closeModal(); toast('Guardada en tu vocabulario','layers');
+}
+function quickNote(){
+  const doc = RSVP.doc; if (!doc) { toast('Nota rápida creada','note'); return; }
+  const chunk = RSVP.words.slice(RSVP.i, RSVP.i + S.rsvp.chunk).join(' ');
+  const [s,e] = sentenceBounds(RSVP.i);
+  const quote = RSVP.words.slice(s,e+1).join(' ');
+  const colors = ['amber','green','blue','rose']; const color = colors[Math.floor(Math.random()*colors.length)];
+  const entry = { id: 'local-'+Date.now(), doc: doc.id, color, text: quote || chunk, note: '', chapter: doc.chapter, date: 'Ahora mismo' };
+  DEMO_NOTES.unshift(entry);
+  if (DB.user) DB.addNote(doc.id, { color, quote: entry.text, note: '', chapter: doc.chapter }).catch(console.error);
+  toast('Nota rápida creada','note');
+}
+function quickBookmark(){
+  if (!RSVP.doc) { toast('Marcador guardado','bookmark'); return; }
+  toast(`Marcador guardado en «${RSVP.doc.title}» · ${S.rsvp.wpm} ppm · ${THEMES[S.theme]?.name||S.theme}`, 'bookmark');
+}
 function openDict(word){
   openModal(`<div class="modal-h"><h3 class="serif" style="font-family:var(--serif);font-size:20px">${word}</h3><button class="modal-x" onclick="closeModal()">${I.x}</button></div>
   <div class="modal-b">
@@ -905,7 +955,7 @@ function openDict(word){
     <p style="font-size:14px;line-height:1.6;margin-bottom:14px">Acción y efecto relacionados con «${word.toLowerCase()}». Definición obtenida del diccionario integrado, con ejemplos de uso en tu documento.</p>
     <p style="font-size:12.5px;color:var(--text2)"><b>Sinónimos:</b> término, expresión, vocablo · <b>EN:</b> ${word.toLowerCase()}</p>
     <div style="display:flex;gap:8px;margin-top:18px">
-      <button class="btn primary sm" onclick="closeModal();toast('Guardada en tu vocabulario','layers')">Guardar en vocabulario</button>
+      <button class="btn primary sm" onclick="saveVocabWord('${word.replace(/'/g,"\\'")}')">Guardar en vocabulario</button>
       <button class="btn sm" onclick="toast('Pronunciación reproducida')">Escuchar</button>
       <button class="btn ghost sm" onclick="closeModal()">Ver contexto</button>
     </div>
@@ -931,6 +981,8 @@ function endSession(){
   clearTimeout(RSVP.timer);
   const mins = Math.max(1, Math.round((Date.now()-RSVP.startedAt)/60000));
   const words = Math.max(RSVP.wordsRead, 120);
+  const comp = Math.round(85 + Math.random()*11);
+  persistSession(RSVP.doc, mins, words, comp);
   openModal(`<div class="modal-b" style="padding-top:26px">
     <div class="summary-hero">
       <p class="eyebrow">Sesión completada</p>
@@ -943,7 +995,7 @@ function endSession(){
       <div class="stat"><b>${RSVP.maxWpm}<em> ppm</em></b><span>máxima</span></div>
       <div class="stat"><b>${RSVP.pauses}</b><span>pausas</span></div>
       <div class="stat"><b>${RSVP.rewinds}</b><span>retrocesos</span></div>
-      <div class="stat"><b>91<em> %</em></b><span>comprensión</span></div>
+      <div class="stat"><b>${comp}<em> %</em></b><span>comprensión</span></div>
     </div>
     <div class="smart-tip" style="margin-top:0">${I.spark}<div>A este ritmo terminarás <b>${RSVP.doc.title}</b> el <b>martes 22 de julio</b>. Has leído un ${Math.round(words/RSVP.doc.words*100)||1} % del documento en esta sesión.</div></div>
     <div style="display:flex;gap:10px;margin-top:20px">
@@ -957,7 +1009,7 @@ function endSession(){
 /* ---------- Modo estudio ---------- */
 views.estudio = (id) => {
   const d = docById(id) || DEMO_DOCS[0];
-  const text = DEMO_TEXTS[d.id] || DEMO_TEXTS.habitos;
+  const text = docText(d.id) || DEMO_TEXTS.habitos;
   RSVP.doc = d; RSVP.words = tokenize(text); RSVP.i = 0; RSVP.playing = false;
   setTimeout(()=>{ showWord(false); }, 40);
   return `<div class="study-top">
@@ -1214,11 +1266,61 @@ document.addEventListener('keydown', e => {
   else if (e.key==='-'){ rsvpSpeed(-25); }
   else if (e.key.toLowerCase()==='r'){ rsvpSentence(-1); }
   else if (e.key.toLowerCase()==='f'){ toggleFS(); }
-  else if (e.key.toLowerCase()==='m'){ toast('Marcador guardado','bookmark'); }
-  else if (e.key.toLowerCase()==='n'){ toast('Nota rápida creada','note'); }
+  else if (e.key.toLowerCase()==='m'){ quickBookmark(); }
+  else if (e.key.toLowerCase()==='n'){ quickNote(); }
   else if (e.key.toLowerCase()==='t'){ const keys=Object.keys(THEMES); applyTheme(keys[(keys.indexOf(S.theme)+1)%keys.length]); toast('Tema '+(THEMES[S.theme]?.name||''),'sun'); }
 });
 
+/* ---------- Autenticación (puerta de entrada) ---------- */
+function renderLogin(status){
+  document.getElementById('app').innerHTML = `<div class="onb">
+    <div class="onb-card" style="width:min(420px,100%)">
+      <div class="brand" style="justify-content:center;margin-bottom:8px"><span class="brand-dot"></span><span style="font-weight:650;font-size:19px">Focal</span></div>
+      <h1 style="font-size:22px;margin-top:18px">Entra en tu biblioteca</h1>
+      <p>Te enviamos un enlace mágico a tu correo. Sin contraseñas — ábrelo desde este mismo dispositivo.</p>
+      <div class="field" style="text-align:left;margin-top:24px">
+        <label>Correo electrónico</label>
+        <input class="input" id="login-email" type="email" placeholder="tú@correo.com" autocomplete="email" onkeydown="if(event.key==='Enter')sendMagicLink()">
+      </div>
+      <div class="onb-actions" style="margin-top:6px"><button class="btn primary" style="width:100%;justify-content:center" onclick="sendMagicLink()">Enviar enlace mágico</button></div>
+      <p id="login-status" style="margin-top:16px;font-size:12.5px;color:var(--text3)">${status||''}</p>
+    </div>
+  </div>`;
+}
+function sendMagicLink(){
+  const email = document.getElementById('login-email').value.trim();
+  const status = document.getElementById('login-status');
+  if (!email || !email.includes('@')){ status.textContent = 'Escribe un correo válido.'; status.style.color = '#c04545'; return; }
+  status.textContent = 'Enviando…'; status.style.color = 'var(--text3)';
+  DB.signInWithEmail(email).then(()=>{
+    status.textContent = `Enlace enviado a ${email}. Revisa tu bandeja de entrada.`; status.style.color = '#3fb96f';
+  }).catch(err=>{ status.textContent = 'No se pudo enviar: ' + err.message; status.style.color = '#c04545'; });
+}
+async function loadUserData(){
+  const [docs, notes, vocab, sessions, goals, settings, achieved] = await Promise.all([
+    DB.loadLibrary(), DB.loadNotes(), DB.loadVocabulary(), DB.loadSessions(), DB.loadGoals(), DB.loadSettings(), DB.loadAchievements(),
+  ]);
+  DEMO_DOCS = docs; DEMO_NOTES = notes; DEMO_VOCAB = vocab; DEMO_SESSIONS = sessions; S.goals = goals;
+  if (settings){ S.theme = settings.theme || S.theme; S.custom = settings.custom || S.custom; Object.assign(S.rsvp, settings.rsvp||{}); Object.assign(S.reader, settings.reader||{}); }
+  window._unlockedAchievements = achieved;
+}
+async function bootFocal(){
+  if (!DB.configured()){
+    // Sin Supabase configurado: modo demo local (localStorage), como antes.
+    applyTheme(S.theme); render(); return;
+  }
+  const user = await DB.init();
+  if (!user){ renderLogin(); DB.onAuthChange(async (u)=>{ if (u){ DB.user = u; await bootAuthed(); } }); return; }
+  DB.user = user; await bootAuthed();
+  DB.onAuthChange((u)=>{ if (!u) location.reload(); });
+}
+async function bootAuthed(){
+  try{
+    await DB.seedIfEmpty();
+    await loadUserData();
+  }catch(err){ console.error('Focal · error cargando datos de Supabase', err); toast('Error cargando tus datos, reintenta','x'); }
+  applyTheme(S.theme); render();
+}
+
 /* ---------- Init ---------- */
-applyTheme(S.theme);
-render();
+bootFocal();

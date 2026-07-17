@@ -9,7 +9,9 @@ const DEMO_TEXTS = {
   informe: `Informe trimestral de resultados. Tercer trimestre del ejercicio 2025. Resumen ejecutivo. Los ingresos consolidados alcanzaron los 48,2 millones de euros, lo que representa un crecimiento interanual del 14,3 por ciento y supera en 2,1 puntos la previsión comunicada en julio. El margen bruto se situó en el 61,8 por ciento, ochenta puntos básicos por encima del trimestre anterior, impulsado por la migración de clientes al plan anual y la reducción de costes de infraestructura. La base de clientes activos creció hasta 12.400 cuentas, con una tasa de retención neta del 118 por ciento. El coste de adquisición de cliente descendió un 9 por ciento gracias a la mayor contribución del canal orgánico, que ya genera el 46 por ciento de las altas nuevas. Evolución por segmentos. El segmento empresarial aportó 29,7 millones de euros, un 61,6 por ciento del total, con especial fortaleza en los sectores financiero y sanitario. El segmento de pequeñas y medianas empresas creció un 22 por ciento interanual, aunque muestra una elasticidad al precio superior a la prevista tras la actualización de tarifas de septiembre. Riesgos y perspectivas. Mantenemos la previsión anual de ingresos entre 192 y 196 millones de euros. Los principales riesgos identificados son la prolongación de los ciclos de venta en el segmento empresarial, la presión competitiva en precios en el mercado norteamericano y la evolución del tipo de cambio euro-dólar. El consejo ha aprobado una inversión adicional de 4 millones de euros en el desarrollo de la plataforma de análisis, con lanzamiento previsto para el segundo trimestre de 2026.`
 };
 
-const DEMO_DOCS = [
+// Nota: estos DEMO_* son el modo sin conexión (CONFIG.SUPABASE_URL vacío).
+// Con Supabase configurado, app.js los sustituye por datos reales por cuenta tras el login.
+let DEMO_DOCS = [
   { id:'habitos', title:'Hábitos atómicos', author:'James Clear', type:'EPUB', pages:328, words:71200, progress:0.62, lastRead:'Hace 2 horas', chapter:'Cap. 11 — Camina despacio, pero nunca hacia atrás', timeLeft:'2 h 10 min', avgWpm:412, tags:['No ficción','Productividad'], fav:true, cover:{bg:'#1d3a2f', fg:'#e8e3d8', accent:'#d97742', ratio:1.5, label:'HA'}, collection:'Crecimiento', added:'12 mar 2026', readTime:'6 h 40 min', sessions:23 },
   { id:'viento', title:'El nombre del viento', author:'Patrick Rothfuss', type:'EPUB', pages:872, words:259000, progress:0.34, lastRead:'Ayer', chapter:'Cap. 16 — Esperanza', timeLeft:'9 h 05 min', avgWpm:388, tags:['Fantasía','Novela'], fav:true, cover:{bg:'#8c2f28', fg:'#f2e6cf', accent:'#e8b04b', ratio:1.55, label:'NV'}, collection:'Ficción', added:'28 feb 2026', readTime:'5 h 12 min', sessions:14 },
   { id:'meditaciones', title:'Meditaciones', author:'Marco Aurelio', type:'EPUB', pages:254, words:52000, progress:0.81, lastRead:'Hace 3 días', chapter:'Libro VII', timeLeft:'48 min', avgWpm:356, tags:['Filosofía','Clásico'], fav:false, cover:{bg:'#e9e2d4', fg:'#2b2620', accent:'#a33b2e', ratio:1.45, label:'M'}, collection:'Crecimiento', added:'4 ene 2026', readTime:'3 h 55 min', sessions:19 },
@@ -19,7 +21,7 @@ const DEMO_DOCS = [
   { id:'informe', title:'Informe Q3 2025 — Resultados', author:'Dirección Financiera', type:'PDF', pages:26, words:8400, progress:1, lastRead:'Hace 1 mes', chapter:'Completado', timeLeft:'—', avgWpm:365, tags:['Trabajo','Informe'], fav:false, cover:{bg:'#f7f5f1', fg:'#33302b', accent:'#b8622f', ratio:1.29, label:'Q3'}, collection:'Trabajo', added:'8 abr 2026', readTime:'26 min', sessions:2, done:true },
 ];
 
-const DEMO_NOTES = [
+let DEMO_NOTES = [
   { id:1, doc:'habitos', color:'amber', text:'No te elevas al nivel de tus metas. Caes al nivel de tus sistemas.', note:'Aplicar a la rutina de lectura: diseñar el sistema, no la meta.', chapter:'Cap. 1', date:'14 jul 2026' },
   { id:2, doc:'habitos', color:'green', text:'Los hábitos son el interés compuesto de la superación personal.', note:'', chapter:'Cap. 1', date:'14 jul 2026' },
   { id:3, doc:'meditaciones', color:'blue', text:'Hemos nacido para colaborar, al igual que los pies, las manos, los párpados.', note:'Idea central del libro II. Relacionar con la nota sobre cooperación.', chapter:'Libro II', date:'11 jul 2026' },
@@ -28,7 +30,7 @@ const DEMO_NOTES = [
   { id:6, doc:'apuntes', color:'green', text:'El factor de carga determina cuándo redimensionar la tabla; un valor típico es 0,75.', note:'Pregunta típica de examen.', chapter:'Tablas hash', date:'6 jul 2026' },
 ];
 
-const DEMO_VOCAB = [
+let DEMO_VOCAB = [
   { word:'contrapunto', def:'Concurrencia de dos o más voces o líneas melódicas independientes; contraste entre dos elementos simultáneos.', doc:'El nombre del viento', date:'9 jul 2026', level:3 },
   { word:'contrafactual', def:'Relativo a lo que no ha sucedido pero podría haber sucedido; condición hipotética contraria a los hechos.', doc:'Razonamiento en modelos…', date:'12 jul 2026', level:2 },
   { word:'amortizado', def:'En análisis de algoritmos, coste medio por operación considerando una secuencia completa de operaciones.', doc:'Apuntes — Estructuras de datos', date:'6 jul 2026', level:4 },
@@ -36,7 +38,7 @@ const DEMO_VOCAB = [
   { word:'elasticidad', def:'Sensibilidad de la demanda ante variaciones del precio.', doc:'Informe Q3 2025', date:'20 jun 2026', level:5 },
 ];
 
-const DEMO_SESSIONS = [
+let DEMO_SESSIONS = [
   { doc:'habitos', date:'Hoy, 09:12', mode:'RSVP', mins:24, words:9840, wpm:410, comp:92 },
   { doc:'viento', date:'Ayer, 22:40', mode:'RSVP', mins:38, words:14700, wpm:387, comp:88 },
   { doc:'habitos', date:'Ayer, 08:55', mode:'Tradicional', mins:18, words:4900, wpm:272, comp:95 },
