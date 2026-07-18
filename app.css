@@ -555,10 +555,23 @@ p.para-flash{animation:paraFlash 2.6s ease-out}
 }
 
 /* ---------- Fase 3: cabeceras de sección ---------- */
-.reader-col .ch-label.section-head{font-family:var(--serif);font-size:1.15em;font-weight:600;color:var(--text);
-  letter-spacing:-.01em;padding-bottom:.4em;border-bottom:1px solid var(--border);margin-bottom:1em;text-transform:none}
-.pause-card.section-pause{border-color:color-mix(in srgb,var(--accent) 40%,var(--border))}
-.pause-card.section-pause .pc-label{color:var(--accent)}
+.reader-col .ch-label.section-head{
+  font-family:var(--serif);font-size:1.7em;font-weight:600;color:var(--text);
+  letter-spacing:-.02em;line-height:1.2;text-align:center;text-transform:none;
+  margin:2.8em 0 1.4em;padding-bottom:.7em;position:relative;scroll-margin-top:72px}
+.reader-col .ch-label.section-head::after{content:'';display:block;width:52px;height:3px;border-radius:2px;
+  background:var(--accent);margin:.7em auto 0}
+.reader-col p[data-pi]{scroll-margin-top:72px}
+/* La primera línea de cada capítulo sin sangría; el resto con sangría clásica de libro */
+.reader-col .ch-label.section-head + p[data-pi]{text-indent:0}
+.reader-col p[data-pi]{text-indent:1.4em;margin-bottom:.2em}
+.reader-col p[data-pi]:first-of-type,.reader-col h2 + p,.reader-col .ch-label + p{text-indent:0}
+.pause-card.section-pause{border-color:color-mix(in srgb,var(--accent) 55%,var(--border));background:color-mix(in srgb,var(--accent) 7%,var(--surface))}
+.pause-card.section-pause .pc-label{color:var(--accent);font-weight:650;letter-spacing:.06em;text-transform:uppercase}
+/* Indicador de sección en el HUD del RSVP */
+.rsvp-section-chip{position:absolute;top:calc(50% - 130px);left:50%;transform:translateX(-50%);
+  font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);font-weight:650;
+  max-width:80vw;text-align:center;opacity:.85;pointer-events:none}
 
 /* ---------- Fase 4: landing con vídeo de fondo + auth ---------- */
 .landing{position:fixed;inset:0;overflow:auto;display:flex;align-items:center;justify-content:center;color:#fff}

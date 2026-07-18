@@ -232,7 +232,12 @@ async function extractEpub(file){
     if (!coverHref){
       const metaCover = opfDoc.querySelector('metadata > meta[name="cover"]');
       const coverId = metaCover?.getAttribute('content');
-      if (coverId && manifest[coverId]) coverHref = manifest[coverId];
+      if (coverId && manifest[coverId]) coverHref = manifest[coverId].href;
+    }
+    // Respaldo: cualquier item de imagen cuyo id/href contenga "cover".
+    if (!coverHref){
+      const guess = Object.values(manifest).find(it => (it.type||'').startsWith('image/') && /cover|portada/i.test(it.href||''));
+      if (guess) coverHref = guess.href;
     }
     if (coverHref){
       const path = opfDir + coverHref;

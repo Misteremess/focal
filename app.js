@@ -1385,7 +1385,7 @@ views.documento = (id) => {
     </div>
     <div class="home-cols">
       <section class="card panel"><h3>Tabla de contenidos</h3>
-        ${secs.map((c,i)=>{ const pct = c.start/paras.length; return `<button class="toc-item ${d.progress>=pct && d.progress< (secs[i+1]?secs[i+1].start/paras.length:1) ?'on':''}" onclick="store.set('readpos.${d.id}',${pct.toFixed(3)});go('lector/${d.id}')"><span>${c.label}</span><span>${d.progress>=(secs[i+1]?secs[i+1].start/paras.length:1)?'✓':Math.max(1,Math.round((paras.slice(c.start, secs[i+1]?.start).join(' ').split(/\s+/).length)/S.rsvp.wpm))+' min'}</span></button>`;}).join('')}
+        ${secs.map((c,i)=>{ const pct = c.start/paras.length; return `<button class="toc-item ${d.progress>=pct && d.progress< (secs[i+1]?secs[i+1].start/paras.length:1) ?'on':''}" onclick="store.set('readsec.${d.id}',${i});go('lector/${d.id}')"><span>${c.label}</span><span>${d.progress>=(secs[i+1]?secs[i+1].start/paras.length:1)?'✓':Math.max(1,Math.round((paras.slice(c.start, secs[i+1]?.start).join(' ').split(/\s+/).length)/S.rsvp.wpm))+' min'}</span></button>`;}).join('')}
         ${bms.length?`<h3 style="margin-top:22px">Marcadores</h3>${bms.map(b=>`
           <div class="toc-item bm-item" style="align-items:flex-start;cursor:pointer" onclick="${b.token!==null?`openBookmark('${b.id}')`:`store.set('readpos.${d.id}',${(b.scroll||0).toFixed(3)});go('lector/${d.id}')`}">
             <span style="display:flex;gap:8px;align-items:flex-start;min-width:0;flex:1">${I.bookmark}
@@ -1543,18 +1543,32 @@ function initReader(docId){
   const body = document.getElementById('rbody'), reader = document.getElementById('reader');
   if (!body) return;
   const d = docById(docId);
-  // Restaurar posición exacta de scroll
-  const saved = store.get('readpos.'+docId, null);
-  if (saved !== null){
-    // Reintenta hasta que el layout esté listo (fuentes, pestaña en segundo plano…)
+  // Salto exacto a una sección elegida en el índice (tiene prioridad sobre la posición guardada).
+  const targetSec = store.get('readsec.'+docId, null);
+  if (targetSec !== null){
+    store.remove('readsec.'+docId);
     let tries = 0;
-    const applyPos = () => {
+    const jump = () => {
       if (!document.body.contains(body)) return;
-      const max = body.scrollHeight - body.clientHeight;
-      if (max > 50 || tries >= 12) body.scrollTop = saved * Math.max(0, max);
-      else { tries++; setTimeout(applyPos, 120); }
+      const el = document.getElementById('sec-'+targetSec);
+      if (el){ el.scrollIntoView({ block:'start' }); }
+      else if (tries < 14){ tries++; setTimeout(jump, 110); }
     };
-    setTimeout(applyPos, 40);
+    setTimeout(jump, 60);
+  } else {
+    // Restaurar posición exacta de scroll
+    const saved = store.get('readpos.'+docId, null);
+    if (saved !== null){
+      // Reintenta hasta que el layout esté listo (fuentes, pestaña en segundo plano…)
+      let tries = 0;
+      const applyPos = () => {
+        if (!document.body.contains(body)) return;
+        const max = body.scrollHeight - body.clientHeight;
+        if (max > 50 || tries >= 12) body.scrollTop = saved * Math.max(0, max);
+        else { tries++; setTimeout(applyPos, 120); }
+      };
+      setTimeout(applyPos, 40);
+    }
   }
   let last = 0;
   body.addEventListener('scroll', ()=>{
@@ -2730,8 +2744,8 @@ function renderLogin(opts){
   _authMode = (opts && opts.mode) || 'login';
   document.getElementById('app').innerHTML = `
   <div class="landing">
-    <video class="landing-bg" autoplay muted loop playsinline poster="landing-poster.jpg?v=10">
-      <source src="landing.mp4?v=10" type="video/mp4">
+    <video class="landing-bg" autoplay muted loop playsinline poster="landing-poster.jpg?v=11">
+      <source src="landing.mp4?v=11" type="video/mp4">
     </video>
     <div class="landing-overlay"></div>
     <div class="landing-content">
