@@ -2689,6 +2689,18 @@ function finishOnb(){ clearTimeout(onbTimer); S.onboarded = true; store.set('onb
 
 /* ---------- Router ---------- */
 function go(route){ location.hash = '#/' + route; }
+/* ---------- Carga perezosa del texto de los documentos ----------
+   La biblioteca solo trae metadatos; el texto (que puede pesar megas) se descarga
+   al abrir el documento. Evita bajar toda la biblioteca en cada arranque. */
+const _textLoaded = new Set();
+function hasDocText(id){ return _textLoaded.has(id) || !!DEMO_TEXTS[id]; }
+async function ensureDocText(id){
+  if (!id || hasDocText(id)) return;
+  if (!DB.user){ _textLoaded.add(id); return; }
+  const content = await DB.loadDocContent(id);
+  DEMO_TEXTS_LIVE[id] = content || '';
+  _textLoaded.add(id);
+}
 function render(){
   clearTimeout(RSVP.timer); clearTimeout(onbTimer);
   const hash = location.hash.replace(/^#\//,'') || (S.onboarded ? 'inicio' : 'onboarding');
@@ -2698,6 +2710,15 @@ function render(){
   const [name, arg] = hash.split('/');
   const fn = views[name] || views.inicio;
   const app = document.getElementById('app');
+  // Vistas que necesitan el texto: descárgalo antes de pintar (una sola vez por documento).
+  if (arg && ['lector','rsvp','documento','estudio'].includes(name) && !hasDocText(arg)){
+    app.classList.remove('immersive');
+    app.innerHTML = shell(name, `<div class="page"><h1 class="page-title">Cargando documento…</h1><p class="page-sub">Descargando el texto del libro.</p></div>`);
+    ensureDocText(arg)
+      .then(render)
+      .catch(err => { console.error(err); toast('No se pudo cargar el documento','x'); go('biblioteca'); });
+    return;
+  }
   const immersive = ['lector','rsvp','calibracion','estudio'].includes(name);
   app.classList.toggle('immersive', immersive);
   if (name==='lector' || name==='rsvp' || name==='calibracion'){
@@ -2746,8 +2767,8 @@ function renderLogin(opts){
   _authMode = (opts && opts.mode) || 'login';
   document.getElementById('app').innerHTML = `
   <div class="landing">
-    <video class="landing-bg" autoplay muted loop playsinline poster="landing-poster.jpg?v=13">
-      <source src="landing.mp4?v=13" type="video/mp4">
+    <video class="landing-bg" autoplay muted loop playsinline poster="landing-poster.jpg?v=14">
+      <source src="landing.mp4?v=14" type="video/mp4">
     </video>
     <div class="landing-overlay"></div>
     <div class="landing-content">

@@ -65,8 +65,12 @@ DB.signOut = () => DB.client.auth.signOut();
 /* ---------- Catálogo + progreso (fusionados en la forma que espera la UI) ---------- */
 DB.loadLibrary = async function () {
   const uid = DB.user.id;
+  // IMPORTANTE: no se pide `content`. El texto de cada libro puede pesar megas y descargarlo
+  // para toda la biblioteca en el arranque satura la red y la memoria (sobre todo en móvil).
+  // Se carga bajo demanda al abrir un documento (ver DB.loadDocContent).
+  const COLS = 'id,owner_id,title,author,type,pages,words,tags,collection,cover,added_at';
   const [{ data: docs, error: e1 }, { data: prog, error: e2 }] = await Promise.all([
-    DB.client.from('documents').select('*').order('added_at', { ascending: false }),
+    DB.client.from('documents').select(COLS).order('added_at', { ascending: false }),
     DB.client.from('progress').select('*').eq('user_id', uid),
   ]);
   if (e1) throw e1; if (e2) throw e2;
@@ -74,7 +78,6 @@ DB.loadLibrary = async function () {
   DEMO_TEXTS_LIVE = {};
   const merged = (docs || []).map(d => {
     const p = byDoc[d.id] || {};
-    DEMO_TEXTS_LIVE[d.id] = d.content || '';
     return {
       id: d.id, title: d.title, author: d.author, type: d.type, pages: d.pages, words: d.words,
       tags: d.tags || [], collection: d.collection, cover: d.cover || { bg:'#ccc', fg:'#111', accent:'#888', ratio:1.4, label:'?' },
@@ -86,6 +89,13 @@ DB.loadLibrary = async function () {
     };
   });
   return merged;
+};
+
+// Carga el texto de UN documento bajo demanda (al abrirlo en el lector/RSVP).
+DB.loadDocContent = async function (docId) {
+  const { data, error } = await DB.client.from('documents').select('content').eq('id', docId).maybeSingle();
+  if (error) throw error;
+  return data ? (data.content || '') : '';
 };
 
 DB.upsertProgress = async function (docId, patch) {
