@@ -293,6 +293,8 @@ select.input{appearance:none;background-image:linear-gradient(45deg,transparent 
 
 /* ===== RSVP ===== */
 .rsvp{position:fixed;inset:0;background:var(--bg);z-index:50;display:flex;flex-direction:column;animation:fadein .35s var(--ease);overflow:hidden}
+/* En el RSVP no se selecciona texto: permite mantener pulsado en móvil sin activar la selección/callout de iOS */
+.rsvp,.rsvp-stage,.rsvp-word,.rsvp-ctx{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 .rsvp-top{display:flex;align-items:center;gap:10px;padding:14px 22px;transition:opacity .45s,transform .45s var(--ease)}
 .rsvp.playing .rsvp-top{opacity:0;transform:translateY(-10px);pointer-events:none}
 .rsvp-stage{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;min-height:0}

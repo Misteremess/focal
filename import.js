@@ -18,27 +18,27 @@ function firstHeading(html){
 }
 
 // Lee el índice real del EPUB: nav.xhtml (EPUB3) o toc.ncx (EPUB2).
-// Devuelve un mapa { nombreDeFichero: títuloDelCapítulo } con la PRIMERA entrada por fichero.
-async function readEpubToc(zip, opfDoc, manifest, opfDir){
-  const map = {};
-  const add = (href, label) => {
+// Devuelve una lista ORDENADA de entradas { base, anchor, label } (con ancla si la hay),
+// para poder dividir capítulos que comparten fichero.
+async function readEpubTocEntries(zip, opfDoc, manifest, opfDir){
+  const entries = [];
+  const push = (href, label) => {
     if (!href || !label) return;
-    const base = href.split('/').pop().split('#')[0];
-    if (base && !map[base]) map[base] = label.replace(/\s+/g,' ').trim();
+    const [file, anchor] = href.split('#');
+    const base = (file || '').split('/').pop();
+    if (base) entries.push({ base, anchor: anchor || null, label: label.replace(/\s+/g,' ').trim() });
   };
   try {
-    // EPUB 3: item del manifest con properties="nav".
     const navItem = Object.values(manifest).find(it => (it.props||'').split(/\s+/).includes('nav'));
     if (navItem){
       const entry = zip.file(opfDir + navItem.href) || zip.file(decodeURIComponent(opfDir + navItem.href));
       if (entry){
         const doc = new DOMParser().parseFromString(await entry.async('text'), 'text/html');
         const nav = doc.querySelector('nav[*|type="toc"]') || doc.querySelector('nav#toc') || doc.querySelector('nav');
-        (nav || doc).querySelectorAll('a[href]').forEach(a => add(a.getAttribute('href'), a.textContent));
-        if (Object.keys(map).length) return map;
+        (nav || doc).querySelectorAll('a[href]').forEach(a => push(a.getAttribute('href'), a.textContent));
+        if (entries.length) return entries;
       }
     }
-    // EPUB 2: toc.ncx (referenciado por spine[toc] o por media-type en el manifest).
     let ncxId = opfDoc.querySelector('spine')?.getAttribute('toc');
     let ncxHref = ncxId && manifest[ncxId] ? manifest[ncxId].href
       : (Object.values(manifest).find(it => (it.type||'').includes('dtbncx'))||{}).href;
@@ -49,12 +49,76 @@ async function readEpubToc(zip, opfDoc, manifest, opfDir){
         ncx.querySelectorAll('navMap navPoint').forEach(np => {
           const label = np.querySelector('navLabel > text')?.textContent;
           const src = np.querySelector('content')?.getAttribute('src');
-          add(src, label);
+          push(src, label);
         });
       }
     }
   } catch(e){ console.warn('TOC EPUB no legible:', e); }
-  return map;
+  return entries;
+}
+
+// Primer elemento de bloque con texto de un cuerpo (para capítulos sin ancla).
+function firstBlock(body){
+  const els = body.querySelectorAll('p,div,h1,h2,h3,h4,section');
+  for (const el of els){ if ((el.textContent||'').trim()) return el; }
+  return body.firstElementChild || body;
+}
+// A partir de un elemento de inicio de capítulo, construye un título legible combinando
+// el número con el nombre (p.ej. «Capítulo 1 · Tiernan») y devuelve los bloques del título
+// para omitirlos del cuerpo (evita duplicar el encabezado).
+function buildChapterTitle(startEl, tocLabel){
+  const txt = el => (el.textContent||'').replace(/\s+/g,' ').trim();
+  const titleEls = [startEl];
+  const startText = txt(startEl);
+  let name = '';
+  let sib = startEl.nextElementSibling, hops = 0;
+  while (sib && hops < 3){
+    const t = txt(sib);
+    if (!t){ sib = sib.nextElementSibling; hops++; continue; } // salta espaciadores vacíos
+    if (t.length <= 46 && !/[.!?…]$/.test(t) && /[a-záéíóúñ]/i.test(t)){
+      name = t; titleEls.push(sib); break; // primera línea corta con letras = nombre del capítulo
+    }
+    break; // la siguiente línea ya es cuerpo
+  }
+  let label = (tocLabel || startText || '').trim();
+  if (name){
+    if (tocLabel && /\d/.test(tocLabel) && !new RegExp(name, 'i').test(tocLabel)) label = `${tocLabel} · ${name}`;
+    else if (/^\d+$/.test(startText)) label = `${startText} · ${name}`;
+    else if (!tocLabel) label = name;
+  }
+  return { label: label || tocLabel || 'Sección', titleEls };
+}
+// Extrae el texto de un fichero de capítulo insertando marcadores de sección en las anclas
+// del TOC y omitiendo las líneas de título (para que no se dupliquen en el cuerpo).
+function chapterizeFile(html, fileEntries){
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  doc.querySelectorAll('script,style,nav,header,footer,noscript').forEach(e => e.remove());
+  const body = doc.body || doc.documentElement;
+  const markerBefore = new Map();
+  const skip = new Set();
+  for (const e of fileEntries){
+    const startEl = e.anchor ? doc.getElementById(e.anchor) : firstBlock(body);
+    if (!startEl || markerBefore.has(startEl)) continue;
+    const { label, titleEls } = buildChapterTitle(startEl, e.label);
+    markerBefore.set(startEl, label);
+    titleEls.forEach(t => skip.add(t));
+  }
+  const blockTags = new Set(['P','DIV','H1','H2','H3','H4','H5','H6','LI','BLOCKQUOTE','SECTION','ARTICLE','TR','FIGCAPTION']);
+  let out = '';
+  (function walk(node){
+    for (const ch of node.childNodes){
+      if (ch.nodeType === 3){ out += ch.nodeValue; continue; }
+      if (ch.nodeType !== 1) continue;
+      if (markerBefore.has(ch)) out += `\n\n${SEC_MARK}${markerBefore.get(ch)}\n\n`;
+      if (skip.has(ch)) continue; // omite las líneas de título del cuerpo
+      if (ch.tagName === 'BR'){ out += '\n'; continue; }
+      const isBlock = blockTags.has(ch.tagName);
+      if (isBlock) out += '\n';
+      walk(ch);
+      if (isBlock) out += '\n';
+    }
+  })(body);
+  return out.replace(/[ \t]+/g,' ').replace(/\n{3,}/g,'\n\n').trim();
 }
 
 /* ---------- Carga perezosa de librerías (CDN) ---------- */
@@ -196,10 +260,11 @@ async function extractEpub(file){
   });
   const spineIds = [...opfDoc.querySelectorAll('spine > itemref')].map(it => it.getAttribute('idref'));
 
-  // Índice real del libro: mapea el nombre de fichero de cada capítulo a su título del TOC.
-  // Prioriza el nav de EPUB3; si no, el toc.ncx de EPUB2. Así el índice coincide con el que
-  // muestran otros lectores en vez de adivinarlo por el texto.
-  const tocByFile = await readEpubToc(zip, opfDoc, manifest, opfDir);
+  // Índice real del libro (nav de EPUB3 o toc.ncx de EPUB2), con anclas para dividir
+  // capítulos que comparten fichero. Así el índice coincide con el de otros lectores.
+  const tocEntries = await readEpubTocEntries(zip, opfDoc, manifest, opfDir);
+  const byFile = {};
+  tocEntries.forEach(e => { (byFile[e.base] = byFile[e.base] || []).push(e); });
 
   let text = '';
   for (const id of spineIds){
@@ -209,18 +274,14 @@ async function extractEpub(file){
     if (!entry) continue;
     const html = await entry.async('text');
     const base = item.href.split('/').pop().split('#')[0];
-    // Título del capítulo: del TOC si existe; si no, el primer encabezado del propio fichero.
-    let title = tocByFile[base] || firstHeading(html);
-    let body = stripHtmlEpub(html);
-    if (title){
-      // Si el cuerpo empieza por el mismo título, quítalo para no duplicarlo.
-      const lines = body.split('\n');
-      if (lines[0] && lines[0].trim().toLowerCase() === title.trim().toLowerCase()){
-        body = lines.slice(1).join('\n').replace(/^\n+/, '');
-      }
-      text += `\n\n${SEC_MARK}${title.trim()}\n\n${body}\n\n`;
+    const fileEntries = byFile[base];
+    if (fileEntries && fileEntries.length){
+      text += '\n\n' + chapterizeFile(html, fileEntries) + '\n\n';
     } else {
-      text += body + '\n\n';
+      // Fichero sin entrada en el índice: usa su primer encabezado si lo hay.
+      const t = firstHeading(html);
+      const body = stripHtmlEpub(html);
+      text += t ? `\n\n${SEC_MARK}${t}\n\n${body}\n\n` : body + '\n\n';
     }
   }
   // Portada: item con properties="cover-image" (EPUB 3) o <meta name="cover"> (EPUB 2).
