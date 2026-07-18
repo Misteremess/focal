@@ -444,6 +444,8 @@ function deleteDocument(id){
     const local = store.get('localImports', []).filter(x=>x.id!==id);
     try{ store.set('localImports', local); }catch(e){ storageError(e); }
     saveDocState();
+    // Borrado persistente en Supabase (documentos propios; el progreso se limpia siempre).
+    if (DB.user) DB.deleteDocument(id).catch(err=>{ console.error(err); toast('No se pudo borrar en el servidor','x'); });
     toast('Documento eliminado','x'); go('biblioteca');
   });
 }
@@ -2744,8 +2746,8 @@ function renderLogin(opts){
   _authMode = (opts && opts.mode) || 'login';
   document.getElementById('app').innerHTML = `
   <div class="landing">
-    <video class="landing-bg" autoplay muted loop playsinline poster="landing-poster.jpg?v=12">
-      <source src="landing.mp4?v=12" type="video/mp4">
+    <video class="landing-bg" autoplay muted loop playsinline poster="landing-poster.jpg?v=13">
+      <source src="landing.mp4?v=13" type="video/mp4">
     </video>
     <div class="landing-overlay"></div>
     <div class="landing-content">
@@ -2900,7 +2902,11 @@ async function loadUserData(){
   const [docs, notes, vocab, sessions, goals, settings, achieved] = await Promise.all([
     DB.loadLibrary(), DB.loadNotes(), DB.loadVocabulary(), DB.loadSessions(), DB.loadGoals(), DB.loadSettings(), DB.loadAchievements(),
   ]);
-  DEMO_DOCS = docs; DEMO_NOTES = notes; DEMO_VOCAB = vocab; DEMO_SESSIONS = sessions; S.goals = goals;
+  // Oculta documentos que el usuario borró (persistente en este dispositivo; en Supabase ya se
+  // eliminaron los propios, esto cubre los demo globales que RLS no permite borrar del catálogo).
+  const deletedIds = store.get('deletedDocs', []);
+  DEMO_DOCS = deletedIds.length ? docs.filter(d => !deletedIds.includes(d.id)) : docs;
+  DEMO_NOTES = notes; DEMO_VOCAB = vocab; DEMO_SESSIONS = sessions; S.goals = goals;
   if (settings){ S.theme = settings.theme || S.theme; S.custom = settings.custom || S.custom; Object.assign(S.rsvp, settings.rsvp||{}); Object.assign(S.reader, settings.reader||{}); }
   // Perfil del usuario (nombre, username, foto, bio…)
   try{

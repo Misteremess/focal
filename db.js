@@ -98,6 +98,16 @@ DB.toggleFavorite = async function (docId, fav) {
   await DB.upsertProgress(docId, { favorite: fav });
 };
 
+// Borra un documento propio (RLS impide borrar los del catálogo compartido).
+// Devuelve cuántas filas se borraron (0 = era un documento demo global).
+DB.deleteDocument = async function (docId) {
+  const { data, error } = await DB.client.from('documents').delete().eq('id', docId).eq('owner_id', DB.user.id).select('id');
+  if (error) throw error;
+  // El progreso propio se limpia siempre (aunque el documento sea demo).
+  await DB.client.from('progress').delete().eq('user_id', DB.user.id).eq('doc_id', docId);
+  return (data || []).length;
+};
+
 /* ---------- Notas ---------- */
 DB.loadNotes = async function () {
   const { data, error } = await DB.client.from('notes').select('*').eq('user_id', DB.user.id).order('created_at', { ascending: false });
