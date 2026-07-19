@@ -57,25 +57,36 @@ async function readEpubTocEntries(zip, opfDoc, manifest, opfDir){
   return entries;
 }
 
-// Primer elemento de bloque con texto de un cuerpo (para capítulos sin ancla).
+// ¿El elemento es un contenedor (tiene otros bloques dentro)? Nunca debe tratarse como título:
+// omitirlo del cuerpo eliminaría el capítulo entero.
+function isBlockContainer(el){
+  return !!(el && el.querySelector && el.querySelector('p,div,section,article,h1,h2,h3,h4,h5,h6,li,blockquote'));
+}
+// Primer bloque de texto "hoja" (para capítulos sin ancla). Se prefieren p/encabezados/li
+// antes que un <div> envolvente, que contendría todo el capítulo.
 function firstBlock(body){
-  const els = body.querySelectorAll('p,div,h1,h2,h3,h4,section');
-  for (const el of els){ if ((el.textContent||'').trim()) return el; }
-  return body.firstElementChild || body;
+  const leaves = body.querySelectorAll('p,h1,h2,h3,h4,h5,h6,li,blockquote');
+  for (const el of leaves){ if ((el.textContent||'').trim()) return el; }
+  const others = body.querySelectorAll('div,section,article');
+  for (const el of others){ if ((el.textContent||'').trim() && !isBlockContainer(el)) return el; }
+  return null;
 }
 // A partir de un elemento de inicio de capítulo, construye un título legible combinando
 // el número con el nombre (p.ej. «Capítulo 1 · Tiernan») y devuelve los bloques del título
 // para omitirlos del cuerpo (evita duplicar el encabezado).
 function buildChapterTitle(startEl, tocLabel){
   const txt = el => (el.textContent||'').replace(/\s+/g,' ').trim();
-  const titleEls = [startEl];
+  const titleEls = [];
   const startText = txt(startEl);
+  // Solo se omite del cuerpo si es una línea corta y NO un contenedor de más bloques.
+  const startIsTitle = !isBlockContainer(startEl) && startText.length <= 80;
+  if (startIsTitle) titleEls.push(startEl);
   let name = '';
-  let sib = startEl.nextElementSibling, hops = 0;
+  let sib = startIsTitle ? startEl.nextElementSibling : null, hops = 0;
   while (sib && hops < 3){
     const t = txt(sib);
     if (!t){ sib = sib.nextElementSibling; hops++; continue; } // salta espaciadores vacíos
-    if (t.length <= 46 && !/[.!?…]$/.test(t) && /[a-záéíóúñ]/i.test(t)){
+    if (!isBlockContainer(sib) && t.length <= 46 && !/[.!?…]$/.test(t) && /[a-záéíóúñ]/i.test(t)){
       name = t; titleEls.push(sib); break; // primera línea corta con letras = nombre del capítulo
     }
     break; // la siguiente línea ya es cuerpo
@@ -96,9 +107,15 @@ function chapterizeFile(html, fileEntries){
   const body = doc.body || doc.documentElement;
   const markerBefore = new Map();
   const skip = new Set();
+  let prefix = '';
   for (const e of fileEntries){
     const startEl = e.anchor ? doc.getElementById(e.anchor) : firstBlock(body);
-    if (!startEl || markerBefore.has(startEl)) continue;
+    if (!startEl){
+      // Sin bloque de texto localizable: el marcador va al principio del fichero.
+      if (!e.anchor && e.label) prefix = `\n\n${SEC_MARK}${e.label}\n\n`;
+      continue;
+    }
+    if (markerBefore.has(startEl)) continue;
     const { label, titleEls } = buildChapterTitle(startEl, e.label);
     markerBefore.set(startEl, label);
     titleEls.forEach(t => skip.add(t));
@@ -118,7 +135,7 @@ function chapterizeFile(html, fileEntries){
       if (isBlock) out += '\n';
     }
   })(body);
-  return out.replace(/[ \t]+/g,' ').replace(/\n{3,}/g,'\n\n').trim();
+  return (prefix + out).replace(/[ \t]+/g,' ').replace(/\n{3,}/g,'\n\n').trim();
 }
 
 /* ---------- Carga perezosa de librerías (CDN) ---------- */
@@ -276,7 +293,15 @@ async function extractEpub(file){
     const base = item.href.split('/').pop().split('#')[0];
     const fileEntries = byFile[base];
     if (fileEntries && fileEntries.length){
-      text += '\n\n' + chapterizeFile(html, fileEntries) + '\n\n';
+      let chunk = chapterizeFile(html, fileEntries);
+      // Red de seguridad: si la división por capítulos perdió texto (estructuras raras),
+      // se vuelve a la extracción plana conservando el título de la sección.
+      const plain = stripHtmlEpub(html);
+      if (countWords(chunk) < countWords(plain) * 0.6){
+        const label = (fileEntries[0] && fileEntries[0].label) || '';
+        chunk = label ? `${SEC_MARK}${label}\n\n${plain}` : plain;
+      }
+      text += '\n\n' + chunk + '\n\n';
     } else {
       // Fichero sin entrada en el índice: usa su primer encabezado si lo hay.
       const t = firstHeading(html);

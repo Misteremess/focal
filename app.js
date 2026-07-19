@@ -2767,8 +2767,8 @@ function renderLogin(opts){
   _authMode = (opts && opts.mode) || 'login';
   document.getElementById('app').innerHTML = `
   <div class="landing">
-    <video class="landing-bg" autoplay muted loop playsinline poster="landing-poster.jpg?v=14">
-      <source src="landing.mp4?v=14" type="video/mp4">
+    <video class="landing-bg" autoplay muted loop playsinline poster="landing-poster.jpg?v=15">
+      <source src="landing.mp4?v=15" type="video/mp4">
     </video>
     <div class="landing-overlay"></div>
     <div class="landing-content">
