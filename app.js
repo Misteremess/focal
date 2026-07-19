@@ -45,6 +45,7 @@ const I = {
   moon:'<svg viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5z"/></svg>',
   split:'<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16M3 14h9"/></svg>',
   gauge:'<svg viewBox="0 0 24 24"><path d="M4 14a8 8 0 1 1 16 0"/><path d="m12 14 4-5"/><path d="M2 20h20"/></svg>',
+  more:'<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none"/></svg>',
 };
 
 /* ---------- Estado ---------- */
@@ -1482,18 +1483,21 @@ views.lector = (id) => {
   setTimeout(()=>initReader(d.id), 30);
   return `<div class="reader ${S.reader.focus?'focus-mode':''}" id="reader">
     <div class="read-prog" id="readprog" style="width:${d.progress*100}%"></div>
-    <div class="reader-top">
+    <div class="reader-top" id="readerTop">
       <button class="tb-icon" onclick="go('documento/${d.id}')">${I.back}</button>
       <div class="reader-title">${escHtml(d.title)} <span>· ${escHtml(d.chapter||'')}</span></div>
       <div style="flex:1"></div>
-      <span class="read-clock" title="Tiempo de esta sesión">${I.timer}<span id="read-timer">0:00</span></span>
-      <button class="tb-icon" title="Contenidos" onclick="document.getElementById('toc-panel').classList.toggle('open')">${I.list}</button>
-      <button class="tb-icon" title="Notas" onclick="document.getElementById('notes-panel').classList.toggle('open')">${I.note}</button>
-      <button class="tb-icon" title="Buscar en el texto" onclick="openDocSearch('${d.id}')">${I.search}</button>
-      <button class="tb-icon" title="Marcador" onclick="readerBookmark('${d.id}')">${I.bookmark}</button>
-      <button class="tb-icon" title="Pantalla completa" onclick="toggleFS()">${I.expand}</button>
-      <button class="tb-icon" title="Ajustes de lectura" onclick="openReadCtrl()">${I.sliders}</button>
-      <button class="btn accent sm" onclick="readerToRsvp('${d.id}')">${I.zap} RSVP</button>
+      <div class="rt-secondary" id="rtSecondary">
+        <span class="read-clock" title="Tiempo de esta sesión">${I.timer}<span id="read-timer">0:00</span></span>
+        <button class="tb-icon" title="Contenidos" onclick="document.getElementById('toc-panel').classList.toggle('open')">${I.list}</button>
+        <button class="tb-icon" title="Notas" onclick="document.getElementById('notes-panel').classList.toggle('open')">${I.note}</button>
+        <button class="tb-icon" title="Buscar en el texto" onclick="openDocSearch('${d.id}')">${I.search}</button>
+        <button class="tb-icon" title="Marcador" onclick="readerBookmark('${d.id}')">${I.bookmark}</button>
+        <button class="tb-icon" title="Pantalla completa" onclick="toggleFS()">${I.expand}</button>
+        <button class="tb-icon" title="Ajustes de lectura" onclick="openReadCtrl()">${I.sliders}</button>
+      </div>
+      <button class="tb-icon rt-more" title="Más opciones" onclick="document.getElementById('readerTop').classList.toggle('rt-open')">${I.more}</button>
+      <button class="btn accent sm" onclick="readerToRsvp('${d.id}')">${I.zap}<span>RSVP</span></button>
     </div>
     <div class="reader-body" id="rbody">
       <div class="reader-col" id="rcol" style="${readerColStyle()}">
@@ -1749,23 +1753,27 @@ views.rsvp = (id) => {
       <div id="pausecard"></div>
     </div>
     <div class="rsvp-bar" id="rbar">
-      <button class="rb-btn" title="Frase anterior (⇧←)" onclick="rsvpSentence(-1)">${I.prevS}</button>
-      <button class="rb-btn" title="Palabra anterior (←)" onclick="rsvpSkip(-1)">${I.prev10}</button>
-      <button class="rb-btn play" id="playbtn" onclick="rsvpToggle()">${I.play}</button>
-      <button class="rb-btn" title="Palabra siguiente (→)" onclick="rsvpSkip(1)">${I.next10}</button>
-      <button class="rb-btn" title="Frase siguiente (⇧→)" onclick="rsvpSentence(1)">${I.nextS}</button>
-      <span class="rb-sep"></span>
-      <div class="rb-speed">
-        <button onclick="rsvpSpeed(-25)">−</button><b id="wpmval">${S.rsvp.wpm} ppm</b><button onclick="rsvpSpeed(25)">+</button>
+      <div class="rb-secondary" id="rbSecondary">
+        <div class="rb-speed">
+          <button onclick="rsvpSpeed(-25)">−</button><b id="wpmval">${S.rsvp.wpm} ppm</b><button onclick="rsvpSpeed(25)">+</button>
+        </div>
+        <select class="input" style="width:66px;padding:5px 8px;font-size:11.5px;font-family:var(--mono)" onchange="S.rsvp.chunk=+this.value;saveRsvp();showWord(false)" title="Palabras por bloque">
+          ${[1,2,3,4,5].map(n=>`<option value="${n}" ${S.rsvp.chunk===n?'selected':''}>${n} pal</option>`).join('')}
+        </select>
+        <span class="rb-sep"></span>
+        <button class="rb-btn" title="Marcador (M)" onclick="quickBookmark()">${I.bookmark}</button>
+        <button class="rb-btn" title="Nota rápida (N)" onclick="quickNote()">${I.note}</button>
+        <button class="rb-btn" title="Temporizador" onclick="openPomodoro()">${I.timer}</button>
+        <button class="rb-btn" title="Terminar sesión" onclick="endSession()">${I.check}</button>
       </div>
-      <select class="input" style="width:66px;padding:5px 8px;font-size:11.5px;font-family:var(--mono)" onchange="S.rsvp.chunk=+this.value;saveRsvp();showWord(false)" title="Palabras por bloque">
-        ${[1,2,3,4,5].map(n=>`<option value="${n}" ${S.rsvp.chunk===n?'selected':''}>${n} pal</option>`).join('')}
-      </select>
-      <span class="rb-sep"></span>
-      <button class="rb-btn" title="Marcador (M)" onclick="quickBookmark()">${I.bookmark}</button>
-      <button class="rb-btn" title="Nota rápida (N)" onclick="quickNote()">${I.note}</button>
-      <button class="rb-btn" title="Temporizador" onclick="openPomodoro()">${I.timer}</button>
-      <button class="rb-btn" title="Terminar sesión" onclick="endSession()">${I.check}</button>
+      <div class="rb-primary">
+        <button class="rb-btn" title="Frase anterior (⇧←)" onclick="rsvpSentence(-1)">${I.prevS}</button>
+        <button class="rb-btn" title="Palabra anterior (←)" onclick="rsvpSkip(-1)">${I.prev10}</button>
+        <button class="rb-btn play" id="playbtn" onclick="rsvpToggle()">${I.play}</button>
+        <button class="rb-btn" title="Palabra siguiente (→)" onclick="rsvpSkip(1)">${I.next10}</button>
+        <button class="rb-btn" title="Frase siguiente (⇧→)" onclick="rsvpSentence(1)">${I.nextS}</button>
+        <button class="rb-btn rb-more" id="rbMoreBtn" title="Más opciones" onclick="toggleRbarMore()">${I.more}</button>
+      </div>
     </div>
     <div class="rsvp-foot"><i id="rprog" style="width:${d.progress*100}%"></i></div>
     ${rsvpSettingsPanel()}
@@ -1869,9 +1877,16 @@ function rsvpToggle(){
   const wrap = document.getElementById('rsvpwrap'), btn = document.getElementById('playbtn');
   wrap.classList.toggle('playing', RSVP.playing);
   btn.innerHTML = RSVP.playing ? I.pause : I.play;
-  if (RSVP.playing){ scheduleNext(0); armIdle(); }
+  if (RSVP.playing){ scheduleNext(0); armIdle(); closeRbarMore(); }
   else { clearTimeout(RSVP.timer); wrap.classList.remove('idle'); RSVP.pauses++; saveRsvpPos(); showWord(false); }
 }
+// En móvil, los controles secundarios (velocidad, marcador, nota…) están colapsados
+// bajo el botón "más" para no saturar la barra con botones diminutos.
+function toggleRbarMore(){
+  const bar = document.getElementById('rbar'); if (!bar) return;
+  bar.classList.toggle('rb-open');
+}
+function closeRbarMore(){ document.getElementById('rbar')?.classList.remove('rb-open'); }
 function scheduleNext(extra){
   clearTimeout(RSVP.timer);
   const w = RSVP.words[RSVP.i] || '';
@@ -2767,8 +2782,8 @@ function renderLogin(opts){
   _authMode = (opts && opts.mode) || 'login';
   document.getElementById('app').innerHTML = `
   <div class="landing">
-    <video class="landing-bg" autoplay muted loop playsinline poster="landing-poster.jpg?v=15">
-      <source src="landing.mp4?v=15" type="video/mp4">
+    <video class="landing-bg" autoplay muted loop playsinline poster="landing-poster.jpg?v=16">
+      <source src="landing.mp4?v=16" type="video/mp4">
     </video>
     <div class="landing-overlay"></div>
     <div class="landing-content">
